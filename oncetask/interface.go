@@ -10,7 +10,7 @@ type OnceTaskHandler[TaskKind ~string] func(ctx context.Context, task *OnceTask[
 // Lease duration for task execution
 const leaseDuration = 10 * time.Minute
 
-// OnceTaskRepository defines the interface for managing once-execution tasks.
+// OnceTaskManager defines the interface for managing once-execution tasks.
 type OnceTaskManager[TaskKind ~string] interface {
 	// CreateTask creates a once task to Firestore.
 	// The task parameter should be created using fs_models/once.NewOnceTask().

@@ -19,7 +19,7 @@ var (
 	errLeaseNotAvailable    = errors.New("lease not available for task")
 )
 
-// firestoreOnceTaskRepository implements OnceTaskRepository using Firestore
+// firestoreOnceTaskManager implements OnceTaskManager using Firestore
 type firestoreOnceTaskManager[TaskKind ~string] struct {
 	client     *firestore.Client
 	collection *firestore.CollectionRef
