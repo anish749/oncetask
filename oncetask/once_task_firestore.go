@@ -27,6 +27,7 @@ type firestoreOnceTaskManager[TaskKind ~string] struct {
 	mu           sync.RWMutex
 	taskHandlers map[TaskKind]OnceTaskHandler[TaskKind]
 	ctx          context.Context // background context in which the task handlers run, can be cancelled during shutdown
+	env          string          // environment identifier for task segregation
 }
 
 // NewFirestoreOnceTaskManager creates a new firestore once task manager.
@@ -38,6 +39,7 @@ func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (On
 		collection:   client.Collection(CollectionOnceTasks),
 		taskHandlers: make(map[TaskKind]OnceTaskHandler[TaskKind]),
 		ctx:          ctx,
+		env:          getTaskEnv(),
 	}
 	return m, cancel
 }
@@ -124,9 +126,11 @@ func (m *firestoreOnceTaskManager[TaskKind]) runQueryLoop(
 	// Query for tasks that are:
 	// 1. Of the specified type
 	// 2. Not done (doneAt is empty)
+	// 3. In the current environment
 	query := m.collection.
 		Where("type", "==", string(taskType)).
-		Where("doneAt", "==", "")
+		Where("doneAt", "==", "").
+		Where("env", "==", m.env)
 
 	iter := query.Snapshots(m.ctx)
 	defer iter.Stop()
@@ -233,6 +237,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) executeTaskWithLease(
 				Where("doneAt", "==", "").
 				Where("leasedUntil", ">", now.Format(time.RFC3339)).
 				Where("id", "!=", taskId).
+				Where("env", "==", m.env).
 				Limit(1)
 
 			docs, err := tx.Documents(query).GetAll()

@@ -22,8 +22,5 @@ type OnceTaskManager[TaskKind ~string] interface {
 	// RegisterTaskHandler listens for new tasks and executes the handler function for each task.
 	// The handler function is expected to successfully execute only once.
 	// If the handler returns an error, the task will be retried.
-	RegisterTaskHandler(
-		taskType TaskKind,
-		handler OnceTaskHandler[TaskKind],
-	) error
+	RegisterTaskHandler(taskType TaskKind, handler OnceTaskHandler[TaskKind]) error
 }

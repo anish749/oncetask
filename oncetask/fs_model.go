@@ -3,13 +3,25 @@ package oncetask
 import (
 	"encoding/json"
 	"fmt"
-
+	"os"
 	"time"
 )
 
 const (
 	CollectionOnceTasks string = "onceTasks"
+	EnvVariable         string = "ONCE_TASK_ENV"
+	DefaultEnv          string = "DEFAULT"
 )
+
+// getTaskEnv returns the task environment from the `EnvVariable` environment variable.
+// If not set, returns `DefaultEnv`.
+func getTaskEnv() string {
+	env := os.Getenv(EnvVariable)
+	if env == "" {
+		return DefaultEnv
+	}
+	return env
+}
 
 // Once Queue is a set of tools and utilities
 // used to execute something only once, asynchronously.
@@ -21,6 +33,10 @@ type OnceTask[TaskKind ~string] struct {
 	// Optional - identifies a resource that requires serialization (e.g., calendarId, conversationId)
 	// When set, lease acquisition checks for active leases on other tasks with the same ResourceKey
 	ResourceKey string `json:"resourceKey" firestore:"resourceKey"`
+
+	// Environment identifier for logical separation of tasks (e.g., "dev", "staging", "prod")
+	// Read from `EnvVariable` environment variable, defaults to "DEFAULT"
+	Env string `json:"env" firestore:"env"`
 
 	LeasedUntil string `json:"leasedUntil" firestore:"leasedUntil"` // ISO 8601 - lease expiration for the task executor.
 	CreatedAt   string `json:"createdAt" firestore:"createdAt"`     // ISO 8601
@@ -83,6 +99,7 @@ func NewOnceTask[TaskKind ~string](taskData OnceTaskData[TaskKind]) (*OnceTask[T
 		Type:        taskData.GetType(),
 		Data:        dataMap,
 		ResourceKey: resourceKey,
+		Env:         getTaskEnv(),
 		LeasedUntil: "", // Initially empty, set when task is leased to an executor.
 		CreatedAt:   createdAt.UTC().Format(time.RFC3339),
 		DoneAt:      "", // Initially empty, set when task is completed
