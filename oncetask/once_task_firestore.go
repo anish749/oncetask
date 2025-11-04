@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
-	"github.com/anish749/go-donna/internal/fs_models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -36,7 +35,7 @@ func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (On
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &firestoreOnceTaskManager[TaskKind]{
 		client:       client,
-		collection:   client.Collection(string(fs_models.CollectionOnceTasks)),
+		collection:   client.Collection(CollectionOnceTasks),
 		taskHandlers: make(map[TaskKind]OnceTaskHandler[TaskKind]),
 		ctx:          ctx,
 	}
@@ -46,10 +45,10 @@ func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (On
 // CreateTask creates a once task to Firestore.
 // The task parameter should be created using fs_models/once.NewOnceTask().
 // If a task with the same ID already exists, logs and returns nil (idempotent).
-func (m *firestoreOnceTaskManager[TaskKind]) CreateTask(ctx context.Context, taskData OnceTaskData[TaskKind]) error {
+func (m *firestoreOnceTaskManager[TaskKind]) CreateTask(ctx context.Context, taskData OnceTaskData[TaskKind]) (bool, error) {
 	task, err := NewOnceTask(taskData)
 	if err != nil {
-		return fmt.Errorf("failed to create once task: %w", err)
+		return false, fmt.Errorf("failed to create once task: %w", err)
 	}
 	doc := m.collection.Doc(task.Id)
 
@@ -60,14 +59,14 @@ func (m *firestoreOnceTaskManager[TaskKind]) CreateTask(ctx context.Context, tas
 			"taskId", task.Id,
 			"taskType", task.Type,
 		)
-		return nil
+		return false, nil
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to create task: %w", err)
+		return false, fmt.Errorf("failed to create task: %w", err)
 	}
 
-	return nil
+	return true, nil
 }
 
 // RegisterTaskHandler registers a task handler and starts a goroutine for that task type.

@@ -15,7 +15,9 @@ type OnceTaskManager[TaskKind ~string] interface {
 	// CreateTask creates a once task to Firestore.
 	// The task parameter should be created using fs_models/once.NewOnceTask().
 	// If a task with the same ID already exists, logs and returns nil (idempotent).
-	CreateTask(ctx context.Context, taskData OnceTaskData[TaskKind]) error
+	// Returns true if the task was created, false if it already existed.
+	// Returns false if a task with the same ID already exists or error.
+	CreateTask(ctx context.Context, taskData OnceTaskData[TaskKind]) (bool, error)
 
 	// RegisterTaskHandler listens for new tasks and executes the handler function for each task.
 	// The handler function is expected to successfully execute only once.

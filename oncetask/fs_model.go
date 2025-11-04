@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+const (
+	CollectionOnceTasks string = "onceTasks"
+)
+
 // Once Queue is a set of tools and utilities
 // used to execute something only once, asynchronously.
 type OnceTask[TaskKind ~string] struct {
