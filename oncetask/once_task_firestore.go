@@ -55,10 +55,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) CreateTask(ctx context.Context, tas
 	// Create() will fail if the document already exists, making this atomic
 	_, err = doc.Create(ctx, task)
 	if err != nil && status.Code(err) == codes.AlreadyExists {
-		slog.InfoContext(ctx, "Task already exists, skipping creation",
-			"taskId", task.Id,
-			"taskType", task.Type,
-		)
+		slog.InfoContext(ctx, "Task already exists, skipping creation", "taskId", task.Id, "taskType", task.Type)
 		return false, nil
 	}
 
@@ -107,10 +104,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) runTaskHandlerLoop(taskType TaskKin
 
 		// Otherwise, log the error and restart the loop after a delay
 		if err != nil {
-			slog.ErrorContext(m.ctx, "Task handler loop error, restarting after delay",
-				"error", err,
-				"taskType", taskType,
-			)
+			slog.ErrorContext(m.ctx, "Task handler loop error, restarting after delay", "error", err, "taskType", taskType)
 			// Wait a bit before restarting to avoid tight restart loops
 			select {
 			case <-m.ctx.Done():
@@ -150,8 +144,8 @@ func (m *firestoreOnceTaskManager[TaskKind]) runQueryLoop(
 
 		// Process each document change in the snapshot
 		for _, docChange := range snap.Changes {
-			// Only process added/modified documents (not deleted)
-			if docChange.Kind != firestore.DocumentAdded && docChange.Kind != firestore.DocumentModified {
+			// Only process documents that are being added to the query. (not updates or deletes)
+			if docChange.Kind != firestore.DocumentAdded {
 				continue
 			}
 			var task OnceTask[TaskKind]
@@ -217,12 +211,12 @@ func (m *firestoreOnceTaskManager[TaskKind]) executeTaskWithLease(
 		if task.LeasedUntil != "" {
 			leaseExpiry, err := time.Parse(time.RFC3339, task.LeasedUntil)
 			if err != nil {
-				slog.ErrorContext(ctx, "Failed to parse lease expiry in lease transaction", "error", err, "taskId", taskId)
+				slog.ErrorContext(ctx, "Failed to parse lease expiry in lease transaction", "error", err, "taskId", taskId, "taskType", task.Type)
 				return fmt.Errorf("failed to parse lease expiry: %w", err)
 			}
 			if leaseExpiry.After(now) {
 				// Lease is still active - cannot acquire
-				slog.InfoContext(ctx, "Lease already held for task", "taskId", taskId, "leasedUntil", task.LeasedUntil)
+				slog.InfoContext(ctx, "Lease already held for task", "taskId", taskId, "leasedUntil", task.LeasedUntil, "taskType", task.Type)
 				return errLeaseNotAvailable
 			}
 		}
@@ -243,7 +237,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) executeTaskWithLease(
 
 			docs, err := tx.Documents(query).GetAll()
 			if err != nil {
-				slog.ErrorContext(ctx, "Failed to query for resource-level leases", "error", err, "taskId", taskId, "resourceKey", task.ResourceKey)
+				slog.ErrorContext(ctx, "Failed to query for resource-level leases", "error", err, "taskId", taskId, "resourceKey", task.ResourceKey, "taskType", task.Type)
 				return fmt.Errorf("failed to query for resource-level leases: %w", err)
 			}
 
@@ -265,12 +259,12 @@ func (m *firestoreOnceTaskManager[TaskKind]) executeTaskWithLease(
 		}
 
 		if err := tx.Update(doc, updates); err != nil {
-			slog.ErrorContext(ctx, "Failed to acquire lease in transaction", "error", err, "taskId", taskId)
+			slog.ErrorContext(ctx, "Failed to acquire lease in transaction", "error", err, "taskId", taskId, "taskType", task.Type)
 			return fmt.Errorf("failed to acquire lease: %w", err)
 		}
 
 		task.LeasedUntil = newLeaseExpiry
-		slog.InfoContext(ctx, "Lease acquired for task", "taskId", taskId, "leasedUntil", newLeaseExpiry)
+		slog.InfoContext(ctx, "Lease acquired for task", "taskId", taskId, "leasedUntil", newLeaseExpiry, "taskType", task.Type)
 
 		return nil
 	})
@@ -294,11 +288,11 @@ func (m *firestoreOnceTaskManager[TaskKind]) executeTaskWithLease(
 			}
 
 			if txErr := tx.Update(doc, updates); txErr != nil {
-				slog.ErrorContext(ctx, "Failed to mark task as done in transaction", "error", txErr, "taskId", taskId)
+				slog.ErrorContext(ctx, "Failed to mark task as done in transaction", "error", txErr, "taskId", taskId, "taskType", task.Type)
 				return fmt.Errorf("failed to mark task as done: %w", txErr)
 			}
 
-			slog.InfoContext(ctx, "Task completed successfully", "taskId", taskId)
+			slog.InfoContext(ctx, "Task completed successfully", "taskId", taskId, "taskType", task.Type)
 		} else {
 			// Handler failed - release lease to allow retry
 			updates := []firestore.Update{
@@ -306,11 +300,11 @@ func (m *firestoreOnceTaskManager[TaskKind]) executeTaskWithLease(
 			}
 
 			if txErr := tx.Update(doc, updates); txErr != nil {
-				slog.ErrorContext(ctx, "Failed to release lease in transaction", "error", txErr, "taskId", taskId)
+				slog.ErrorContext(ctx, "Failed to release lease in transaction", "error", txErr, "taskId", taskId, "taskType", task.Type)
 				return fmt.Errorf("failed to release lease: %w", txErr)
 			}
 
-			slog.ErrorContext(ctx, "Handler failed, releasing lease for retry", "error", handlerErr, "taskId", taskId)
+			slog.ErrorContext(ctx, "Handler failed, releasing lease for retry", "error", handlerErr, "taskId", taskId, "taskType", task.Type)
 		}
 
 		// Return the original handler error if it occurred
