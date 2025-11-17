@@ -67,13 +67,16 @@ func (m *firestoreOnceTaskManager[TaskKind]) CreateTask(ctx context.Context, tas
 		return false, fmt.Errorf("failed to create task: %w", err)
 	}
 
+	// Trigger immediate evaluation for this task type
+	m.evaluateNow(task.Type)
+
 	return true, nil
 }
 
-// EvaluateNow triggers immediate evaluation for a specific task type.
+// evaluateNow triggers immediate evaluation for a specific task type.
 // This causes the task consumer loop for this type to check for ready tasks immediately,
 // bypassing the normal polling interval.
-func (m *firestoreOnceTaskManager[TaskKind]) EvaluateNow(taskType TaskKind) {
+func (m *firestoreOnceTaskManager[TaskKind]) evaluateNow(taskType TaskKind) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -121,7 +124,8 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterTaskHandler(
 }
 
 // runTaskHandlerLoop runs the consumer loop for a specific task type.
-// It queries for the next ready task every minute and processes it synchronously.
+// It processes pending tasks immediately on startup, then queries for ready tasks
+// every minute and processes them synchronously.
 // Can be triggered immediately via the evaluateChan channel.
 // Runs indefinitely until the context is cancelled.
 func (m *firestoreOnceTaskManager[TaskKind]) runTaskHandlerLoop(
@@ -134,6 +138,9 @@ func (m *firestoreOnceTaskManager[TaskKind]) runTaskHandlerLoop(
 
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
+
+	// Process pending tasks immediately on startup
+	m.processPendingTasks(taskType, handler)
 
 	for {
 		select {
@@ -300,7 +307,8 @@ func (m *firestoreOnceTaskManager[TaskKind]) executeTaskWithLease(
 	}
 
 	// Step 2: Execute handler function (outside transaction)
-	handlerErr := handler(ctx, &task)
+	// Add task ID to context for automatic logging
+	handlerErr := handler(withTaskID(ctx, taskId), &task)
 
 	// Step 3: Update task and release lease
 	return m.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
