@@ -24,10 +24,11 @@ type firestoreOnceTaskManager[TaskKind ~string] struct {
 	client     *firestore.Client
 	collection *firestore.CollectionRef
 
-	mu           sync.RWMutex
-	taskHandlers map[TaskKind]OnceTaskHandler[TaskKind]
-	ctx          context.Context // background context in which the task handlers run, can be cancelled during shutdown
-	env          string          // environment identifier for task segregation
+	mu            sync.RWMutex
+	taskHandlers  map[TaskKind]OnceTaskHandler[TaskKind]
+	evaluateChans map[TaskKind]chan struct{} // Per task type channels for immediate evaluation
+	ctx           context.Context            // background context in which the task handlers run, can be cancelled during shutdown
+	env           string                     // environment identifier for task segregation
 }
 
 // NewFirestoreOnceTaskManager creates a new firestore once task manager.
@@ -35,11 +36,12 @@ type firestoreOnceTaskManager[TaskKind ~string] struct {
 func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (OnceTaskManager[TaskKind], func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &firestoreOnceTaskManager[TaskKind]{
-		client:       client,
-		collection:   client.Collection(CollectionOnceTasks),
-		taskHandlers: make(map[TaskKind]OnceTaskHandler[TaskKind]),
-		ctx:          ctx,
-		env:          getTaskEnv(),
+		client:        client,
+		collection:    client.Collection(CollectionOnceTasks),
+		taskHandlers:  make(map[TaskKind]OnceTaskHandler[TaskKind]),
+		evaluateChans: make(map[TaskKind]chan struct{}),
+		ctx:           ctx,
+		env:           getTaskEnv(),
 	}
 	return m, cancel
 }
@@ -48,7 +50,7 @@ func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (On
 // The task parameter should be created using fs_models/once.NewOnceTask().
 // If a task with the same ID already exists, logs and returns nil (idempotent).
 func (m *firestoreOnceTaskManager[TaskKind]) CreateTask(ctx context.Context, taskData OnceTaskData[TaskKind]) (bool, error) {
-	task, err := NewOnceTask(taskData)
+	task, err := newOnceTask(taskData)
 	if err != nil {
 		return false, fmt.Errorf("failed to create once task: %w", err)
 	}
@@ -66,6 +68,27 @@ func (m *firestoreOnceTaskManager[TaskKind]) CreateTask(ctx context.Context, tas
 	}
 
 	return true, nil
+}
+
+// EvaluateNow triggers immediate evaluation for a specific task type.
+// This causes the task consumer loop for this type to check for ready tasks immediately,
+// bypassing the normal polling interval.
+func (m *firestoreOnceTaskManager[TaskKind]) EvaluateNow(taskType TaskKind) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	ch, exists := m.evaluateChans[taskType]
+	if !exists {
+		slog.WarnContext(m.ctx, "No handler registered for task type", "taskType", taskType)
+		return
+	}
+
+	select {
+	case ch <- struct{}{}:
+		slog.InfoContext(m.ctx, "Triggered immediate evaluation", "taskType", taskType)
+	default:
+		// Channel buffer full, evaluation will happen soon anyway
+	}
 }
 
 // RegisterTaskHandler registers a task handler and starts a goroutine for that task type.
@@ -87,93 +110,91 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterTaskHandler(
 	// Store the handler in the map
 	m.taskHandlers[taskType] = handler
 
+	// Create evaluate channel for this task type (buffered to avoid blocking)
+	evaluateChan := make(chan struct{}, 1)
+	m.evaluateChans[taskType] = evaluateChan
+
 	// Start a goroutine for this task type
-	go m.runTaskHandlerLoop(taskType, handler)
+	go m.runTaskHandlerLoop(taskType, handler, evaluateChan)
 
 	return nil
 }
 
-// runTaskHandlerLoop runs the query loop for a specific task type.
-// It automatically restarts the query on errors (but not on context cancellation).
-func (m *firestoreOnceTaskManager[TaskKind]) runTaskHandlerLoop(taskType TaskKind, handler OnceTaskHandler[TaskKind]) {
+// runTaskHandlerLoop runs the consumer loop for a specific task type.
+// It queries for the next ready task every minute and processes it synchronously.
+// Can be triggered immediately via the evaluateChan channel.
+// Runs indefinitely until the context is cancelled.
+func (m *firestoreOnceTaskManager[TaskKind]) runTaskHandlerLoop(
+	taskType TaskKind,
+	handler OnceTaskHandler[TaskKind],
+	evaluateChan chan struct{},
+) {
+	slog.InfoContext(m.ctx, "Starting task consumer loop", "taskType", taskType)
+	defer slog.InfoContext(m.ctx, "Task consumer loop stopped", "taskType", taskType)
+
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
 	for {
-		err := m.runQueryLoop(taskType, handler)
-
-		// If context was cancelled, exit
-		if m.ctx.Err() != nil {
+		select {
+		case <-m.ctx.Done():
 			return
-		}
-
-		// Otherwise, log the error and restart the loop after a delay
-		if err != nil {
-			slog.ErrorContext(m.ctx, "Task handler loop error, restarting after delay", "error", err, "taskType", taskType)
-			// Wait a bit before restarting to avoid tight restart loops
-			select {
-			case <-m.ctx.Done():
-				return
-			case <-time.After(5 * time.Second):
-				// Restart loop
-			}
+		case <-ticker.C:
+			m.processPendingTasks(taskType, handler)
+		case <-evaluateChan:
+			m.processPendingTasks(taskType, handler)
 		}
 	}
 }
 
-// runQueryLoop runs a single iteration of the query loop for a task type
-func (m *firestoreOnceTaskManager[TaskKind]) runQueryLoop(
+// processPendingTasks queries for ready tasks and processes them one by one.
+// A task is ready if:
+// - waitUntil <= now (scheduled time has arrived or immediate execution with epoch time)
+// - Not already leased by another instance
+// Processes up to 100 tasks per call.
+func (m *firestoreOnceTaskManager[TaskKind]) processPendingTasks(
 	taskType TaskKind,
 	handler OnceTaskHandler[TaskKind],
-) error {
-	// Query for tasks that are:
-	// 1. Of the specified type
-	// 2. Not done (doneAt is empty)
-	// 3. In the current environment
+) {
+	ctx := m.ctx
+	now := time.Now().UTC()
+
+	// Query for ready tasks that are not currently leased
 	query := m.collection.
+		Select("id").
 		Where("type", "==", string(taskType)).
 		Where("doneAt", "==", "").
-		Where("env", "==", m.env)
+		Where("env", "==", m.env).
+		Where("waitUntil", "<=", now.Format(time.RFC3339)).
+		Where("leasedUntil", "<=", now.Format(time.RFC3339)).
+		OrderBy("leasedUntil", firestore.Asc).
+		OrderBy("waitUntil", firestore.Asc).
+		Limit(100)
 
-	iter := query.Snapshots(m.ctx)
-	defer iter.Stop()
+	docs, err := query.Documents(ctx).GetAll()
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to query for pending tasks", "error", err, "taskType", taskType)
+		return
+	}
 
-	for {
-		snap, err := iter.Next()
+	// No tasks ready
+	if len(docs) == 0 {
+		slog.InfoContext(ctx, "No pending tasks found", "taskType", taskType)
+		return
+	}
+
+	slog.InfoContext(ctx, "Processing pending tasks", "taskType", taskType, "count", len(docs))
+
+	for _, doc := range docs {
+		taskId := doc.Ref.ID
+		// Execute the task synchronously
+		err = m.executeTaskWithLease(ctx, taskId, handler)
 		if err != nil {
-			// Check if context was cancelled
-			if m.ctx.Err() != nil {
-				return m.ctx.Err()
-			}
-			slog.ErrorContext(m.ctx, "Error receiving snapshot in query loop", "error", err, "taskType", taskType)
-			return fmt.Errorf("error receiving snapshot: %w", err)
-		}
-
-		// Process each document change in the snapshot
-		for _, docChange := range snap.Changes {
-			// Only process documents that are being added to the query. (not updates or deletes)
-			if docChange.Kind != firestore.DocumentAdded {
+			if errors.Is(err, errLeaseNotAvailable) {
+				// Another instance already processing this task, skip silently
 				continue
 			}
-			var task OnceTask[TaskKind]
-			if err := docChange.Doc.DataTo(&task); err != nil {
-				slog.ErrorContext(m.ctx, "Failed to parse task from snapshot", "error", err, "taskId", docChange.Doc.Ref.ID)
-				continue
-			}
-
-			// Skip if task is already done (shouldn't happen due to query, but be safe)
-			if task.DoneAt != "" || task.Type != taskType {
-				continue
-			}
-
-			taskId := task.Id
-			err := m.executeTaskWithLease(m.ctx, taskId, handler)
-			if err != nil {
-				if errors.Is(err, errLeaseNotAvailable) {
-					slog.InfoContext(m.ctx, "Lease not available for task, skipping", "taskId", taskId, "taskType", taskType)
-					continue
-				}
-				slog.ErrorContext(m.ctx, "Error executing handler with lease in query loop", "error", err, "taskId", taskId, "taskType", taskType)
-				// Continue processing other tasks even if one fails
-				continue
-			}
+			slog.ErrorContext(ctx, "Error executing task", "error", err, "taskId", taskId, "taskType", taskType)
 		}
 	}
 }

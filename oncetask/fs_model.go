@@ -35,9 +35,10 @@ type OnceTask[TaskKind ~string] struct {
 	ResourceKey string `json:"resourceKey" firestore:"resourceKey"`
 
 	// Environment identifier for logical separation of tasks (e.g., "dev", "staging", "prod")
-	// Read from `EnvVariable` environment variable, defaults to "DEFAULT"
+	// Read from `EnvVariable` (ONCE_TASK_ENV) environment variable, defaults to "DEFAULT"
 	Env string `json:"env" firestore:"env"`
 
+	WaitUntil   string `json:"waitUntil" firestore:"waitUntil"`     // ISO 8601 - wait until this time to execute the task.
 	LeasedUntil string `json:"leasedUntil" firestore:"leasedUntil"` // ISO 8601 - lease expiration for the task executor.
 	CreatedAt   string `json:"createdAt" firestore:"createdAt"`     // ISO 8601
 	DoneAt      string `json:"doneAt" firestore:"doneAt"`           // ISO 8601
@@ -64,6 +65,13 @@ type ResourceKeyProvider interface {
 	GetResourceKey() string
 }
 
+// ScheduledTask is an optional interface that OnceTaskData implementations can implement
+// to specify a scheduled time for the task. When GetScheduledTime() returns a non-empty time,
+// the task will not be executed until the specified time.
+type ScheduledTask interface {
+	GetScheduledTime() time.Time
+}
+
 // This allows for reading the data field into a specific type.
 func (t *OnceTask[TaskKind]) ReadInto(v OnceTaskData[TaskKind]) error {
 	if t.Type != v.GetType() {
@@ -76,7 +84,8 @@ func (t *OnceTask[TaskKind]) ReadInto(v OnceTaskData[TaskKind]) error {
 	return json.Unmarshal(jsonBytes, v)
 }
 
-func NewOnceTask[TaskKind ~string](taskData OnceTaskData[TaskKind]) (*OnceTask[TaskKind], error) {
+// Use CreateTask() on the OnceTaskManager to create a new OnceTask.
+func newOnceTask[TaskKind ~string](taskData OnceTaskData[TaskKind]) (*OnceTask[TaskKind], error) {
 	taskID := taskData.GenerateIdempotentID()
 	createdAt := time.Now()
 	data, err := json.Marshal(taskData)
@@ -94,13 +103,24 @@ func NewOnceTask[TaskKind ~string](taskData OnceTaskData[TaskKind]) (*OnceTask[T
 		resourceKey = provider.GetResourceKey()
 	}
 
+	// Extract WaitUntil if the task data implements ScheduledTask
+	// Default to epoch time (zero time) for immediate execution
+	waitUntil := time.Time{}.Format(time.RFC3339) // Epoch: 0001-01-01T00:00:00Z
+	if scheduledTask, ok := taskData.(ScheduledTask); ok {
+		scheduledTime := scheduledTask.GetScheduledTime()
+		if !scheduledTime.IsZero() {
+			waitUntil = scheduledTime.UTC().Format(time.RFC3339)
+		}
+	}
+
 	return &OnceTask[TaskKind]{
 		Id:          taskID,
 		Type:        taskData.GetType(),
 		Data:        dataMap,
 		ResourceKey: resourceKey,
 		Env:         getTaskEnv(),
-		LeasedUntil: "", // Initially empty, set when task is leased to an executor.
+		WaitUntil:   waitUntil, // Epoch time for immediate tasks, or scheduled time
+		LeasedUntil: "",        // Initially empty, set when task is leased to an executor.
 		CreatedAt:   createdAt.UTC().Format(time.RFC3339),
 		DoneAt:      "", // Initially empty, set when task is completed
 	}, nil

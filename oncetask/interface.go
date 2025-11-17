@@ -23,4 +23,8 @@ type OnceTaskManager[TaskKind ~string] interface {
 	// The handler function is expected to successfully execute only once.
 	// If the handler returns an error, the task will be retried.
 	RegisterTaskHandler(taskType TaskKind, handler OnceTaskHandler[TaskKind]) error
+
+	// EvaluateNow triggers immediate evaluation for a specific task type.
+	// This bypasses the normal polling interval and checks for ready tasks immediately.
+	EvaluateNow(taskType TaskKind)
 }
