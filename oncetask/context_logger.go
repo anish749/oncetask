@@ -9,22 +9,23 @@ import (
 type contextKey string
 
 const (
-	taskIDContextKey contextKey = "oncetask.taskID"
+	taskIDContextKey      contextKey = "oncetask.taskID"
+	resourceKeyContextKey contextKey = "oncetask.resourceKey"
 )
 
-// withTaskID adds the task ID to the context for automatic logging
-func withTaskID(ctx context.Context, taskID string) context.Context {
-	return context.WithValue(ctx, taskIDContextKey, taskID)
+// withTaskContext adds both task ID and resource key to the context for automatic logging
+func withTaskContext(ctx context.Context, taskID string, resourceKey string) context.Context {
+	if taskID != "" {
+		ctx = context.WithValue(ctx, taskIDContextKey, taskID)
+	}
+	if resourceKey != "" {
+		ctx = context.WithValue(ctx, resourceKeyContextKey, resourceKey)
+	}
+	return ctx
 }
 
-// taskIDFromContext retrieves the task ID from the context, if present
-func taskIDFromContext(ctx context.Context) (string, bool) {
-	taskID, ok := ctx.Value(taskIDContextKey).(string)
-	return taskID, ok
-}
-
-// ContextHandler is a slog.Handler that automatically extracts the task ID from context
-// and adds it as an attribute to all log records.
+// ContextHandler is a slog.Handler that automatically extracts the task ID and resource key from context
+// and adds them as attributes to all log records.
 //
 // Usage:
 //
@@ -46,11 +47,15 @@ func (h *ContextHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return h.handler.Enabled(ctx, level)
 }
 
-// Handle implements slog.Handler and automatically adds task ID from context
+// Handle implements slog.Handler and automatically adds task ID and resource key from context
 func (h *ContextHandler) Handle(ctx context.Context, r slog.Record) error {
 	// Extract task ID from context and add it to the record
-	if taskID, ok := taskIDFromContext(ctx); ok {
+	if taskID, ok := ctx.Value(taskIDContextKey).(string); ok {
 		r.AddAttrs(slog.String("taskId", taskID))
+	}
+	// Extract resource key from context and add it to the record
+	if resourceKey, ok := ctx.Value(resourceKeyContextKey).(string); ok {
+		r.AddAttrs(slog.String("resourceKey", resourceKey))
 	}
 	return h.handler.Handle(ctx, r)
 }

@@ -132,7 +132,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterTaskHandler(
 			return fmt.Errorf("expected 1 task, got %d", len(tasks))
 		}
 		task := tasks[0]
-		return handler(withTaskID(ctx, task.Id), &task)
+		return handler(withTaskContext(ctx, task.Id, task.ResourceKey), &task)
 	}
 
 	go m.runLoop(taskType, singleTaskProcessor, evaluateChan)
@@ -167,7 +167,20 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterResourceKeyHandler(
 	evaluateChan := make(chan struct{}, 1)
 	m.evaluateChans[taskType] = evaluateChan
 
-	go m.runLoop(taskType, handler, evaluateChan)
+	// Wrap the handler to add task context
+	resourceKeyProcessor := func(ctx context.Context, tasks []OnceTask[TaskKind]) error {
+		// For single task, add both taskId and resourceKey
+		// For multiple tasks, only add resourceKey (all tasks share the same resourceKey)
+		if len(tasks) == 1 {
+			ctx = withTaskContext(ctx, tasks[0].Id, tasks[0].ResourceKey)
+		} else if tasks[0].ResourceKey != "" {
+			// Multiple tasks - only set resourceKey, not taskId
+			ctx = withTaskContext(ctx, "", tasks[0].ResourceKey)
+		}
+		return handler(ctx, tasks)
+	}
+
+	go m.runLoop(taskType, resourceKeyProcessor, evaluateChan)
 
 	return nil
 }
