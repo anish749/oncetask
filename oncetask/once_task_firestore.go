@@ -24,11 +24,12 @@ type firestoreOnceTaskManager[TaskKind ~string] struct {
 	client     *firestore.Client
 	collection *firestore.CollectionRef
 
-	mu            sync.RWMutex
-	taskHandlers  map[TaskKind]OnceTaskHandler[TaskKind]
-	evaluateChans map[TaskKind]chan struct{} // Per task type channels for immediate evaluation
-	ctx           context.Context            // background context in which the task handlers run, can be cancelled during shutdown
-	env           string                     // environment identifier for task segregation
+	mu                  sync.RWMutex
+	taskHandlers        map[TaskKind]OnceTaskHandler[TaskKind]
+	resourceKeyHandlers map[TaskKind]OnceTaskResourceKeyHandler[TaskKind]
+	evaluateChans       map[TaskKind]chan struct{} // Per task type channels for immediate evaluation
+	ctx                 context.Context            // background context in which the task handlers run, can be cancelled during shutdown
+	env                 string                     // environment identifier for task segregation
 }
 
 // NewFirestoreOnceTaskManager creates a new firestore once task manager.
@@ -36,12 +37,13 @@ type firestoreOnceTaskManager[TaskKind ~string] struct {
 func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (OnceTaskManager[TaskKind], func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &firestoreOnceTaskManager[TaskKind]{
-		client:        client,
-		collection:    client.Collection(CollectionOnceTasks),
-		taskHandlers:  make(map[TaskKind]OnceTaskHandler[TaskKind]),
-		evaluateChans: make(map[TaskKind]chan struct{}),
-		ctx:           ctx,
-		env:           getTaskEnv(),
+		client:              client,
+		collection:          client.Collection(CollectionOnceTasks),
+		taskHandlers:        make(map[TaskKind]OnceTaskHandler[TaskKind]),
+		resourceKeyHandlers: make(map[TaskKind]OnceTaskResourceKeyHandler[TaskKind]),
+		evaluateChans:       make(map[TaskKind]chan struct{}),
+		ctx:                 ctx,
+		env:                 getTaskEnv(),
 	}
 	return m, cancel
 }
@@ -105,9 +107,12 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterTaskHandler(
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Check if handler already exists
+	// Check if handler already exists (either single or resource key)
 	if _, exists := m.taskHandlers[taskType]; exists {
 		return fmt.Errorf("%w: task type %s", ErrHandlerAlreadyExists, taskType)
+	}
+	if _, exists := m.resourceKeyHandlers[taskType]; exists {
+		return fmt.Errorf("%w: task type %s (resource key handler registered)", ErrHandlerAlreadyExists, taskType)
 	}
 
 	// Store the handler in the map
@@ -117,231 +122,302 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterTaskHandler(
 	evaluateChan := make(chan struct{}, 1)
 	m.evaluateChans[taskType] = evaluateChan
 
-	// Start a goroutine for this task type
-	go m.runTaskHandlerLoop(taskType, handler, evaluateChan)
+	// Create an adapter that makes the single task handler compatible with the resource key handler.
+	singleTaskProcessor := func(ctx context.Context, tasks []OnceTask[TaskKind]) error {
+		// We must process only one task here, so that we can mark the task as done before starting the next task.
+		// Otherwise, we won't be marking a single task as done before starting the next task.
+		if len(tasks) != 1 {
+			// The limit in the claimTasks function must ensure that we only claim one task.
+			slog.ErrorContext(ctx, "We claimed more than one task", "taskType", taskType, "taskCount", len(tasks))
+			return fmt.Errorf("expected 1 task, got %d", len(tasks))
+		}
+		task := tasks[0]
+		return handler(withTaskID(ctx, task.Id), &task)
+	}
+
+	go m.runLoop(taskType, singleTaskProcessor, evaluateChan)
 
 	return nil
 }
 
-// runTaskHandlerLoop runs the consumer loop for a specific task type.
-// It processes pending tasks immediately on startup, then queries for ready tasks
-// every minute and processes them synchronously.
-// Can be triggered immediately via the evaluateChan channel.
-// Runs indefinitely until the context is cancelled.
-func (m *firestoreOnceTaskManager[TaskKind]) runTaskHandlerLoop(
+// RegisterResourceKeyHandler registers a resource key handler and starts a goroutine for that task type.
+// All pending tasks with the same resource key are grouped together and sorted by CreatedAt.
+// If the handler returns nil, all tasks for that resource key are marked as done.
+// If the handler returns an error, all tasks for that resource key will be retried.
+// Returns ErrHandlerAlreadyExists if a handler for this task type is already registered.
+func (m *firestoreOnceTaskManager[TaskKind]) RegisterResourceKeyHandler(
 	taskType TaskKind,
-	handler OnceTaskHandler[TaskKind],
+	handler OnceTaskResourceKeyHandler[TaskKind],
+) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Check if handler already exists (either single or resource key)
+	if _, exists := m.taskHandlers[taskType]; exists {
+		return fmt.Errorf("%w: task type %s (single handler registered)", ErrHandlerAlreadyExists, taskType)
+	}
+	if _, exists := m.resourceKeyHandlers[taskType]; exists {
+		return fmt.Errorf("%w: task type %s", ErrHandlerAlreadyExists, taskType)
+	}
+
+	// Store the handler in the map
+	m.resourceKeyHandlers[taskType] = handler
+
+	// Create evaluate channel for this task type (buffered to avoid blocking)
+	evaluateChan := make(chan struct{}, 1)
+	m.evaluateChans[taskType] = evaluateChan
+
+	go m.runLoop(taskType, handler, evaluateChan)
+
+	return nil
+}
+
+// runLoop is the main processing loop for both single and resource-key tasks.
+// It repeatedly claims batches of tasks, executes them, and completes them.
+func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
+	taskType TaskKind,
+	processor func(context.Context, []OnceTask[TaskKind]) error,
 	evaluateChan chan struct{},
 ) {
-	slog.InfoContext(m.ctx, "Starting task consumer loop", "taskType", taskType)
-	defer slog.InfoContext(m.ctx, "Task consumer loop stopped", "taskType", taskType)
+	slog.InfoContext(m.ctx, "Starting unified task consumer loop", "taskType", taskType)
+	defer slog.InfoContext(m.ctx, "Unified task consumer loop stopped", "taskType", taskType)
 
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
-	// Process pending tasks immediately on startup
-	m.processPendingTasks(taskType, handler)
+	// Start with checking for work immediately
+	shouldWait := false
 
 	for {
-		select {
-		case <-m.ctx.Done():
-			return
-		case <-ticker.C:
-			m.processPendingTasks(taskType, handler)
-		case <-evaluateChan:
-			m.processPendingTasks(taskType, handler)
-		}
-	}
-}
-
-// processPendingTasks queries for ready tasks and processes them one by one.
-// A task is ready if:
-// - waitUntil <= now (scheduled time has arrived or immediate execution with epoch time)
-// - Not already leased by another instance
-// Processes up to 100 tasks per call.
-func (m *firestoreOnceTaskManager[TaskKind]) processPendingTasks(
-	taskType TaskKind,
-	handler OnceTaskHandler[TaskKind],
-) {
-	ctx := m.ctx
-	now := time.Now().UTC()
-
-	// Query for ready tasks that are not currently leased
-	query := m.collection.
-		Select("id").
-		Where("type", "==", string(taskType)).
-		Where("doneAt", "==", "").
-		Where("env", "==", m.env).
-		Where("waitUntil", "<=", now.Format(time.RFC3339)).
-		Where("leasedUntil", "<=", now.Format(time.RFC3339)).
-		OrderBy("leasedUntil", firestore.Asc).
-		OrderBy("waitUntil", firestore.Asc).
-		Limit(100)
-
-	docs, err := query.Documents(ctx).GetAll()
-	if err != nil {
-		slog.ErrorContext(ctx, "Failed to query for pending tasks", "error", err, "taskType", taskType)
-		return
-	}
-
-	// No tasks ready
-	if len(docs) == 0 {
-		slog.InfoContext(ctx, "No pending tasks found", "taskType", taskType)
-		return
-	}
-
-	slog.InfoContext(ctx, "Processing pending tasks", "taskType", taskType, "count", len(docs))
-
-	for _, doc := range docs {
-		taskId := doc.Ref.ID
-		// Execute the task synchronously
-		err = m.executeTaskWithLease(ctx, taskId, handler)
-		if err != nil {
-			if errors.Is(err, errLeaseNotAvailable) {
-				// Another instance already processing this task, skip silently
-				continue
+		// 1. Wait for trigger (if needed)
+		if shouldWait {
+			select {
+			case <-m.ctx.Done():
+				return
+			case <-ticker.C: // Timer fired, check for work
+			case <-evaluateChan: // Signal received, check for work
 			}
-			slog.ErrorContext(ctx, "Error executing task", "error", err, "taskId", taskId, "taskType", taskType)
+		}
+
+		// Check context cancellation if we skipped the select
+		if m.ctx.Err() != nil {
+			return
+		}
+
+		// 2. Claim Tasks
+		tasks, err := m.claimTasks(m.ctx, taskType)
+		if err != nil {
+			if !errors.Is(err, errLeaseNotAvailable) {
+				slog.ErrorContext(m.ctx, "Failed to claim task batch", "error", err, "taskType", taskType)
+			}
+			// On error, wait for next trigger (backoff)
+			shouldWait = true
+			continue
+		}
+
+		if len(tasks) == 0 {
+			// No work available, wait for next trigger
+			shouldWait = true
+			continue
+		}
+
+		// We found work, so check again immediately after this batch (drain the queue)
+		shouldWait = false
+
+		// 3. Execute Batch (User Code)
+		execErr := processor(m.ctx, tasks)
+		if execErr != nil {
+			slog.ErrorContext(m.ctx, "Task batch execution failed", "error", execErr, "taskType", taskType, "batchSize", len(tasks))
+		}
+
+		// 4. Complete Batch (Update DB)
+		if err := m.completeBatch(m.ctx, tasks, execErr); err != nil {
+			slog.ErrorContext(m.ctx, "Failed to complete task batch", "error", err, "taskType", taskType)
 		}
 	}
 }
 
-// executeTaskWithLease executes a task handler with distributed lease management
-// - Looks up task by taskId
-// - Acquires lease (or returns ErrLeaseNotAvailable if already held by another instance)
-// - Calls handler with the task
-// - Marks task as done if handler succeeds
-// - Releases lease if handler fails (to allow retry)
-func (m *firestoreOnceTaskManager[TaskKind]) executeTaskWithLease(
-	ctx context.Context,
-	taskId string,
-	handler OnceTaskHandler[TaskKind],
-) error {
-	// Step 1: Acquire lease and get current task
-	var task OnceTask[TaskKind]
+// claimTasks attempts to find and lock ready tasks (one or more, depending on handler type).
+// Returns a slice of locked tasks. If no tasks are available, returns empty slice and nil error.
+func (m *firestoreOnceTaskManager[TaskKind]) claimTasks(ctx context.Context, taskType TaskKind) ([]OnceTask[TaskKind], error) {
+	var tasks []OnceTask[TaskKind]
 	now := time.Now().UTC()
 
 	err := m.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		// Look up task by taskId
-		doc := m.collection.Doc(taskId)
-		snap, err := tx.Get(doc)
+		// 1. Find a candidate task
+		// We look for ONE task that is ready.
+		query := m.collection.
+			Where("type", "==", string(taskType)).
+			Where("doneAt", "==", "").
+			Where("env", "==", m.env).
+			Where("waitUntil", "<=", now.Format(time.RFC3339)).
+			Where("leasedUntil", "<=", now.Format(time.RFC3339)).
+			OrderBy("leasedUntil", firestore.Asc).
+			OrderBy("waitUntil", firestore.Asc).
+			Limit(1)
+
+		docs, err := tx.Documents(query).GetAll()
 		if err != nil {
-			slog.ErrorContext(ctx, "Failed to get task in lease transaction", "error", err, "taskId", taskId)
-			return fmt.Errorf("failed to get task: %w", err)
+			return fmt.Errorf("failed to query candidate task: %w", err)
+		}
+		if len(docs) == 0 {
+			return nil // No tasks ready
 		}
 
-		if err := snap.DataTo(&task); err != nil {
-			return fmt.Errorf("failed to parse task: %w", err)
+		candidateDoc := docs[0]
+		candidateRef := candidateDoc.Ref
+		candidateID := candidateRef.ID
+
+		var candidate OnceTask[TaskKind]
+		if err := candidateDoc.DataTo(&candidate); err != nil {
+			return fmt.Errorf("failed to parse candidate task: %w", err)
 		}
 
-		// Skip if task is already done
-		if task.DoneAt != "" {
-			return nil
+		// Double check lease (in case query was slightly stale or concurrent)
+		if err := checkTaskLease(candidate, now); err != nil {
+			return err
 		}
 
-		// Check if this specific task already has a lease
-		if task.LeasedUntil != "" {
-			leaseExpiry, err := time.Parse(time.RFC3339, task.LeasedUntil)
-			if err != nil {
-				slog.ErrorContext(ctx, "Failed to parse lease expiry in lease transaction", "error", err, "taskId", taskId, "taskType", task.Type)
-				return fmt.Errorf("failed to parse lease expiry: %w", err)
-			}
-			if leaseExpiry.After(now) {
-				// Lease is still active - cannot acquire
-				slog.InfoContext(ctx, "Lease already held for task", "taskId", taskId, "leasedUntil", task.LeasedUntil, "taskType", task.Type)
-				return errLeaseNotAvailable
-			}
-		}
+		// 2. Determine Batch Scope (Single vs Resource Group)
+		// Check if we have a ResourceKeyHandler registered for this type
+		m.mu.RLock()
+		_, hasResourceKeyHandler := m.resourceKeyHandlers[taskType]
+		m.mu.RUnlock()
 
-		// If ResourceKey is set, check for active leases on other tasks with the same ResourceKey
-		// This ensures resource-level serialization (e.g., only one sync per calendarId at a time)
-		if task.ResourceKey != "" {
-			// Query for other tasks with same ResourceKey, same type, not done, with active lease, and excluding current task
-			// The query filters for leasedUntil > now, so any matching document has an active lease
-			// Limit to 1 since we only need to check existence
-			query := m.collection.
-				Where("type", "==", string(task.Type)).
-				Where("resourceKey", "==", task.ResourceKey).
+		if hasResourceKeyHandler && candidate.ResourceKey != "" {
+			// RESOURCE KEY MODE
+			// We need to lock ALL ready tasks for this resource key.
+			// We fetch ALL tasks that are "ready" (waitUntil <= now).
+			// This includes tasks that might currently be leased (running).
+			batchQuery := m.collection.
+				Where("type", "==", string(taskType)).
+				Where("resourceKey", "==", candidate.ResourceKey).
 				Where("doneAt", "==", "").
-				Where("leasedUntil", ">", now.Format(time.RFC3339)).
-				Where("id", "!=", taskId).
 				Where("env", "==", m.env).
-				Limit(1)
+				Where("waitUntil", "<=", now.Format(time.RFC3339)).
+				OrderBy("waitUntil", firestore.Asc).
+				OrderBy("createdAt", firestore.Asc)
 
-			docs, err := tx.Documents(query).GetAll()
+			batchDocs, err := tx.Documents(batchQuery).GetAll()
 			if err != nil {
-				slog.ErrorContext(ctx, "Failed to query for resource-level leases", "error", err, "taskId", taskId, "resourceKey", task.ResourceKey, "taskType", task.Type)
-				return fmt.Errorf("failed to query for resource-level leases: %w", err)
+				return fmt.Errorf("failed to fetch resource key tasks: %w", err)
 			}
 
-			// If any documents match, another task with the same ResourceKey has an active lease
-			if len(docs) > 0 {
-				slog.InfoContext(ctx, "Resource-level lease already held",
-					"taskId", taskId,
-					"resourceKey", task.ResourceKey,
-					"otherTaskId", docs[0].Ref.ID,
-				)
-				return errLeaseNotAvailable
+			tasks = make([]OnceTask[TaskKind], 0, len(batchDocs))
+			newLeaseExpiry := now.Add(leaseDuration).Format(time.RFC3339)
+
+			// In-memory check for mutual exclusion
+			for _, doc := range batchDocs {
+				var t OnceTask[TaskKind]
+				if err := doc.DataTo(&t); err != nil {
+					return fmt.Errorf("failed to parse task: %w", err)
+				}
+
+				// Check if ANY task in this group is currently running (leased)
+				if err := checkTaskLease(t, now); err != nil {
+					return err
+				}
+
+				// Task is free, add to batch and prepare lease update
+				if err := tx.Update(doc.Ref, []firestore.Update{{Path: "leasedUntil", Value: newLeaseExpiry}}); err != nil {
+					return err
+				}
+				t.LeasedUntil = newLeaseExpiry
+				tasks = append(tasks, t)
 			}
-		}
 
-		// Acquire lease
-		newLeaseExpiry := now.Add(leaseDuration).Format(time.RFC3339)
-		updates := []firestore.Update{
-			{Path: "leasedUntil", Value: newLeaseExpiry},
-		}
+		} else {
+			// SINGLE TASK MODE
+			// Even in single mode, if ResourceKey is present, we must ensure mutual exclusion
+			// with other tasks of the same ResourceKey.
+			if candidate.ResourceKey != "" {
+				leaseCheckQuery := m.collection.
+					Where("type", "==", string(taskType)).
+					Where("resourceKey", "==", candidate.ResourceKey).
+					Where("doneAt", "==", "").
+					Where("leasedUntil", ">", now.Format(time.RFC3339)).
+					Where("id", "!=", candidateID). // Don't block on self
+					Where("env", "==", m.env).
+					Limit(1)
 
-		if err := tx.Update(doc, updates); err != nil {
-			slog.ErrorContext(ctx, "Failed to acquire lease in transaction", "error", err, "taskId", taskId, "taskType", task.Type)
-			return fmt.Errorf("failed to acquire lease: %w", err)
-		}
+				leasedDocs, err := tx.Documents(leaseCheckQuery).GetAll()
+				if err != nil {
+					return fmt.Errorf("failed to check resource key conflict: %w", err)
+				}
+				if len(leasedDocs) > 0 {
+					return errLeaseNotAvailable
+				}
+			}
 
-		task.LeasedUntil = newLeaseExpiry
-		slog.InfoContext(ctx, "Lease acquired for task", "taskId", taskId, "leasedUntil", newLeaseExpiry, "taskType", task.Type)
+			// Lease the single candidate
+			newLeaseExpiry := now.Add(leaseDuration).Format(time.RFC3339)
+			if err := tx.Update(candidateRef, []firestore.Update{{Path: "leasedUntil", Value: newLeaseExpiry}}); err != nil {
+				return err
+			}
+			candidate.LeasedUntil = newLeaseExpiry
+			tasks = []OnceTask[TaskKind]{candidate}
+		}
 
 		return nil
 	})
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Step 2: Execute handler function (outside transaction)
-	// Add task ID to context for automatic logging
-	handlerErr := handler(withTaskID(ctx, taskId), &task)
+	return tasks, nil
+}
 
-	// Step 3: Update task and release lease
-	return m.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		doc := m.collection.Doc(taskId)
+// completeBatch updates the tasks in Firestore based on the execution result.
+func (m *firestoreOnceTaskManager[TaskKind]) completeBatch(ctx context.Context, tasks []OnceTask[TaskKind], execErr error) error {
+	if len(tasks) == 0 {
+		return nil
+	}
 
-		if handlerErr == nil {
-			// Handler succeeded - mark task as done
-			updates := []firestore.Update{
-				{Path: "doneAt", Value: now.Format(time.RFC3339)},
-				{Path: "leasedUntil", Value: nil}, // Clear lease
+	now := time.Now().UTC()
+	err := m.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		for _, task := range tasks {
+			doc := m.collection.Doc(task.Id)
+			var updates []firestore.Update
+
+			if execErr == nil {
+				// Success: Mark done and clear lease
+				updates = []firestore.Update{
+					{Path: "doneAt", Value: now.Format(time.RFC3339)},
+					{Path: "leasedUntil", Value: nil},
+				}
+			} else {
+				// Failure: Clear lease immediately to allow retry
+				updates = []firestore.Update{
+					{Path: "leasedUntil", Value: nil},
+				}
 			}
 
-			if txErr := tx.Update(doc, updates); txErr != nil {
-				slog.ErrorContext(ctx, "Failed to mark task as done in transaction", "error", txErr, "taskId", taskId, "taskType", task.Type)
-				return fmt.Errorf("failed to mark task as done: %w", txErr)
+			if err := tx.Update(doc, updates); err != nil {
+				return fmt.Errorf("failed to update task %s: %w", task.Id, err)
 			}
-
-			slog.InfoContext(ctx, "Task completed successfully", "taskId", taskId, "taskType", task.Type)
-		} else {
-			// Handler failed - release lease to allow retry
-			updates := []firestore.Update{
-				{Path: "leasedUntil", Value: nil}, // Clear lease - task will be retried
-			}
-
-			if txErr := tx.Update(doc, updates); txErr != nil {
-				slog.ErrorContext(ctx, "Failed to release lease in transaction", "error", txErr, "taskId", taskId, "taskType", task.Type)
-				return fmt.Errorf("failed to release lease: %w", txErr)
-			}
-
-			slog.ErrorContext(ctx, "Handler failed, releasing lease for retry", "error", handlerErr, "taskId", taskId, "taskType", task.Type)
 		}
-
-		// Return the original handler error if it occurred
-		return handlerErr
+		return nil
 	})
+
+	return err
+}
+
+// checkTaskLease checks if a task is currently leased (locked by another executor).
+// Returns errLeaseNotAvailable if the task is leased, nil if available, or an error if parsing fails.
+func checkTaskLease[TaskKind ~string](task OnceTask[TaskKind], now time.Time) error {
+	if task.LeasedUntil == "" {
+		return nil
+	}
+
+	leasedUntil, err := time.Parse(time.RFC3339, task.LeasedUntil)
+	if err != nil {
+		return fmt.Errorf("failed to parse leasedUntil: %w", err)
+	}
+
+	if leasedUntil.After(now) {
+		return errLeaseNotAvailable
+	}
+
+	return nil
 }
