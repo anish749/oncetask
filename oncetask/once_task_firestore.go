@@ -435,28 +435,30 @@ func checkTaskLease[TaskKind ~string](task OnceTask[TaskKind], now time.Time) er
 	return nil
 }
 
-// GetTaskByID retrieves a task by its ID from Firestore.
-// The task must belong to the current environment (from ONCE_TASK_ENV).
-// Returns an error if the task is not found or if the environment doesn't match.
-func (m *firestoreOnceTaskManager[TaskKind]) GetTaskByID(ctx context.Context, taskID string) (*OnceTask[TaskKind], error) {
-	doc := m.collection.Doc(taskID)
-	snapshot, err := doc.Get(ctx)
+// GetTasksByResourceKey retrieves all tasks with the given resource key from Firestore.
+// Returns tasks ordered by CreatedAt (oldest first).
+// The tasks must belong to the current environment (from ONCE_TASK_ENV).
+func (m *firestoreOnceTaskManager[TaskKind]) GetTasksByResourceKey(ctx context.Context, resourceKey string) ([]OnceTask[TaskKind], error) {
+	// Query for tasks with the given resource key and current environment
+	query := m.collection.
+		Where("resourceKey", "==", resourceKey).
+		Where("env", "==", m.env)
+
+	docs, err := query.Documents(ctx).GetAll()
 	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return nil, fmt.Errorf("task not found: %s", taskID)
+		slog.ErrorContext(ctx, "Failed to query tasks by resource key", "resourceKey", resourceKey, "env", m.env, "error", err)
+		return nil, fmt.Errorf("failed to query tasks by resource key %s: %w", resourceKey, err)
+	}
+
+	tasks := make([]OnceTask[TaskKind], 0, len(docs))
+	for _, doc := range docs {
+		var task OnceTask[TaskKind]
+		if err := doc.DataTo(&task); err != nil {
+			slog.ErrorContext(ctx, "Failed to unmarshal task", "taskId", doc.Ref.ID, "error", err)
+			return nil, fmt.Errorf("failed to unmarshal task %s: %w", doc.Ref.ID, err)
 		}
-		return nil, fmt.Errorf("failed to get task %s: %w", taskID, err)
+		tasks = append(tasks, task)
 	}
 
-	var task OnceTask[TaskKind]
-	if err := snapshot.DataTo(&task); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal task %s: %w", taskID, err)
-	}
-
-	// Validate environment matches
-	if task.Env != m.env {
-		return nil, fmt.Errorf("task %s belongs to environment %s, current environment is %s", taskID, task.Env, m.env)
-	}
-
-	return &task, nil
+	return tasks, nil
 }
