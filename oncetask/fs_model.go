@@ -13,6 +13,21 @@ const (
 	DefaultEnv          string = "DEFAULT"
 )
 
+// TaskState represents the derived execution state of a task.
+// States are computed from the task's timestamp fields, not stored directly.
+type TaskState string
+
+const (
+	// TaskStateWaiting indicates the task is scheduled for future execution (waitUntil > now)
+	TaskStateWaiting TaskState = "waiting"
+	// TaskStatePending indicates the task is ready to execute (waitUntil <= now, not leased, not done)
+	TaskStatePending TaskState = "pending"
+	// TaskStateLeased indicates the task is currently being executed (leasedUntil > now)
+	TaskStateLeased TaskState = "leased"
+	// TaskStateCompleted indicates the task has finished execution (doneAt is set)
+	TaskStateCompleted TaskState = "completed"
+)
+
 // getTaskEnv returns the task environment from the `EnvVariable` environment variable.
 // If not set, returns `DefaultEnv`.
 func getTaskEnv() string {
@@ -82,6 +97,48 @@ func (t *OnceTask[TaskKind]) ReadInto(v OnceTaskData[TaskKind]) error {
 		return err
 	}
 	return json.Unmarshal(jsonBytes, v)
+}
+
+// GetTaskState computes and returns the current execution state of the task.
+// The state is derived from the task's timestamp fields relative to the provided current time.
+// This method mirrors the frontend's getTaskStatus() logic for consistency.
+// Returns an error if any timestamp field contains invalid RFC3339 format.
+func (t *OnceTask[TaskKind]) GetTaskState(now time.Time) (TaskState, error) {
+	// Parse and check doneAt
+	if t.DoneAt != "" {
+		doneTime, err := time.Parse(time.RFC3339, t.DoneAt)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse doneAt: %w", err)
+		}
+		if !doneTime.IsZero() {
+			return TaskStateCompleted, nil
+		}
+	}
+
+	// Parse and check leasedUntil
+	if t.LeasedUntil != "" {
+		leaseTime, err := time.Parse(time.RFC3339, t.LeasedUntil)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse leasedUntil: %w", err)
+		}
+		if !leaseTime.IsZero() && leaseTime.After(now) {
+			return TaskStateLeased, nil
+		}
+	}
+
+	// Parse and check waitUntil
+	if t.WaitUntil != "" {
+		waitTime, err := time.Parse(time.RFC3339, t.WaitUntil)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse waitUntil: %w", err)
+		}
+		if !waitTime.IsZero() && waitTime.After(now) {
+			return TaskStateWaiting, nil
+		}
+	}
+
+	// PENDING: doneAt == "" AND leasedUntil expired AND waitUntil <= now
+	return TaskStatePending, nil
 }
 
 // Use CreateTask() on the OnceTaskManager to create a new OnceTask.

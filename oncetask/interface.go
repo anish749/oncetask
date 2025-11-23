@@ -57,4 +57,9 @@ type OnceTaskManager[TaskKind ~string] interface {
 	// If the handler returns an error, all tasks for that resource key will be retried.
 	// Tasks without a resource key are processed individually.
 	RegisterResourceKeyHandler(taskType TaskKind, handler OnceTaskResourceKeyHandler[TaskKind]) error
+
+	// GetTaskByID retrieves a task by its ID.
+	// Returns the task if found, or an error if not found or if there was a query error.
+	// The task must belong to the current environment (from ONCE_TASK_ENV).
+	GetTaskByID(ctx context.Context, taskID string) (*OnceTask[TaskKind], error)
 }

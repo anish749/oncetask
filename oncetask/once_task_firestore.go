@@ -434,3 +434,29 @@ func checkTaskLease[TaskKind ~string](task OnceTask[TaskKind], now time.Time) er
 
 	return nil
 }
+
+// GetTaskByID retrieves a task by its ID from Firestore.
+// The task must belong to the current environment (from ONCE_TASK_ENV).
+// Returns an error if the task is not found or if the environment doesn't match.
+func (m *firestoreOnceTaskManager[TaskKind]) GetTaskByID(ctx context.Context, taskID string) (*OnceTask[TaskKind], error) {
+	doc := m.collection.Doc(taskID)
+	snapshot, err := doc.Get(ctx)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return nil, fmt.Errorf("task not found: %s", taskID)
+		}
+		return nil, fmt.Errorf("failed to get task %s: %w", taskID, err)
+	}
+
+	var task OnceTask[TaskKind]
+	if err := snapshot.DataTo(&task); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal task %s: %w", taskID, err)
+	}
+
+	// Validate environment matches
+	if task.Env != m.env {
+		return nil, fmt.Errorf("task %s belongs to environment %s, current environment is %s", taskID, task.Env, m.env)
+	}
+
+	return &task, nil
+}
