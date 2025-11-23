@@ -24,7 +24,7 @@ type OnceTaskHandler[TaskKind ~string] func(ctx context.Context, task *OnceTask[
 //
 // This handler corresponds to the "AllPerResourceKey" strategy:
 //   - All pending tasks for a specific ResourceKey are claimed and executed together.
-//   - Tasks are sorted by CreatedAt timestamp to maintain FIFO ordering within the pipeline.
+//   - Tasks are ordered by WaitUntil timestamp. The handler is responsible for any additional ordering logic.
 //
 // If the ResourceKey is empty, the handler behaves like a single task handler (Concurrent strategy).
 //
@@ -51,7 +51,8 @@ type OnceTaskManager[TaskKind ~string] interface {
 	RegisterTaskHandler(taskType TaskKind, handler OnceTaskHandler[TaskKind]) error
 
 	// RegisterResourceKeyHandler listens for new tasks and executes the handler for all tasks with the same resource key.
-	// All pending tasks with the same resource key are grouped together and sorted by CreatedAt.
+	// All pending tasks with the same resource key are grouped together and ordered by WaitUntil.
+	// The handler is responsible for any additional ordering logic.
 	// If the handler returns nil, all tasks for that resource key are marked as done.
 	// If the handler returns an error, all tasks for that resource key will be retried.
 	// Tasks without a resource key are processed individually.

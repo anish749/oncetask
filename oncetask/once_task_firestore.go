@@ -141,7 +141,8 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterTaskHandler(
 }
 
 // RegisterResourceKeyHandler registers a resource key handler and starts a goroutine for that task type.
-// All pending tasks with the same resource key are grouped together and sorted by CreatedAt.
+// All pending tasks with the same resource key are grouped together and ordered by WaitUntil.
+// The handler is responsible for any additional ordering logic.
 // If the handler returns nil, all tasks for that resource key are marked as done.
 // If the handler returns an error, all tasks for that resource key will be retried.
 // Returns ErrHandlerAlreadyExists if a handler for this task type is already registered.
@@ -308,8 +309,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) claimTasks(ctx context.Context, tas
 				Where("doneAt", "==", "").
 				Where("env", "==", m.env).
 				Where("waitUntil", "<=", now.Format(time.RFC3339)).
-				OrderBy("waitUntil", firestore.Asc).
-				OrderBy("createdAt", firestore.Asc)
+				OrderBy("waitUntil", firestore.Asc)
 
 			batchDocs, err := tx.Documents(batchQuery).GetAll()
 			if err != nil {
