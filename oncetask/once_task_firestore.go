@@ -193,8 +193,8 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 	processor func(context.Context, []OnceTask[TaskKind]) error,
 	evaluateChan chan struct{},
 ) {
-	slog.InfoContext(m.ctx, "Starting unified task consumer loop", "taskType", taskType)
-	defer slog.InfoContext(m.ctx, "Unified task consumer loop stopped", "taskType", taskType)
+	slog.InfoContext(m.ctx, "Starting task consumer loop", "taskType", taskType)
+	defer slog.InfoContext(m.ctx, "Task consumer loop stopped", "taskType", taskType)
 
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
@@ -393,16 +393,20 @@ func (m *firestoreOnceTaskManager[TaskKind]) completeBatch(ctx context.Context, 
 			doc := m.collection.Doc(task.Id)
 			var updates []firestore.Update
 
+			// Must use empty string for leasedUntil, not nil: setting to nil sets the field to null in Firestore,
+			// and the query in claimTasks() uses "leasedUntil <= timestamp" which won't match
+			// documents where the field is null. Empty string ensures the field can be matched by the query,
+			// allowing the task to be picked up on retry.
 			if execErr == nil {
 				// Success: Mark done and clear lease
 				updates = []firestore.Update{
 					{Path: "doneAt", Value: now.Format(time.RFC3339)},
-					{Path: "leasedUntil", Value: nil},
+					{Path: "leasedUntil", Value: ""},
 				}
 			} else {
 				// Failure: Clear lease immediately to allow retry
 				updates = []firestore.Update{
-					{Path: "leasedUntil", Value: nil},
+					{Path: "leasedUntil", Value: ""},
 				}
 			}
 
