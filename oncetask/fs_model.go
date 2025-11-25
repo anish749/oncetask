@@ -13,20 +13,29 @@ const (
 	DefaultEnv          string = "DEFAULT"
 )
 
-// TaskState represents the derived execution state of a task.
-// States are computed from the task's timestamp fields, not stored directly.
-type TaskState string
+// TaskError represents a single failed execution attempt.
+type TaskError struct {
+	At    string `json:"at" firestore:"at"`       // ISO 8601 timestamp of failure
+	Error string `json:"error" firestore:"error"` // Failure reason
+}
 
-const (
-	// TaskStateWaiting indicates the task is scheduled for future execution (waitUntil > now)
-	TaskStateWaiting TaskState = "waiting"
-	// TaskStatePending indicates the task is ready to execute (waitUntil <= now, not leased, not done)
-	TaskStatePending TaskState = "pending"
-	// TaskStateLeased indicates the task is currently being executed (leasedUntil > now)
-	TaskStateLeased TaskState = "leased"
-	// TaskStateCompleted indicates the task has finished execution (doneAt is set)
-	TaskStateCompleted TaskState = "completed"
-)
+// Recurrence defines a recurring task schedule using RFC 5545 RRULE.
+// When set on a task, the task becomes a generator that creates occurrence tasks.
+//
+// Architecture:
+//   - Recurrence Task (Generator): Holds the RRULE and spawns occurrence tasks.
+//     Has Recurrence set, never marked as done (unless RRULE exhausted).
+//   - Occurrence Task (Instance): A regular one-time task spawned by the generator.
+//     Has ParentRecurrenceID set, has its own lifecycle (attempts, errors, result, doneAt).
+//
+// After 3 weeks of weekly runs, there are 4 tasks total:
+//   - 1 recurrence task (the generator, still active)
+//   - 3 occurrence tasks (each with their own execution history)
+type Recurrence struct {
+	RRule   string   `json:"rrule" firestore:"rrule"`     // RFC 5545 rule, e.g., "FREQ=WEEKLY;BYDAY=MO"
+	DTStart string   `json:"dtstart" firestore:"dtstart"` // Recurrence anchor time (ISO 8601)
+	ExDates []string `json:"exdates" firestore:"exdates"` // Exception dates to skip
+}
 
 // getTaskEnv returns the task environment from the `EnvVariable` environment variable.
 // If not set, returns `DefaultEnv`.
@@ -57,6 +66,18 @@ type OnceTask[TaskKind ~string] struct {
 	LeasedUntil string `json:"leasedUntil" firestore:"leasedUntil"` // ISO 8601 - lease expiration for the task executor.
 	CreatedAt   string `json:"createdAt" firestore:"createdAt"`     // ISO 8601
 	DoneAt      string `json:"doneAt" firestore:"doneAt"`           // ISO 8601
+
+	// Retry and result tracking fields
+	Attempts int         `json:"attempts" firestore:"attempts"` // Number of execution attempts (incremented when lease is acquired)
+	Errors   []TaskError `json:"errors" firestore:"errors"`     // Failure history (one entry per failed attempt)
+	Result   any         `json:"result" firestore:"result"`     // Handler output (optional, can be nil on success)
+
+	// Recurrence fields
+	// For recurrence tasks (generators): Recurrence is set, ParentRecurrenceID is empty
+	// For occurrence tasks (instances): Recurrence is nil, ParentRecurrenceID points to generator
+	Recurrence          *Recurrence `json:"recurrence" firestore:"recurrence"`                   // Recurrence config (nil = one-time or occurrence task)
+	ParentRecurrenceID  string      `json:"parentRecurrenceId" firestore:"parentRecurrenceId"`   // ID of parent recurrence task (empty = standalone or recurrence task)
+	OccurrenceTimestamp string      `json:"occurrenceTimestamp" firestore:"occurrenceTimestamp"` // Scheduled time of this occurrence (ISO 8601)
 }
 
 // OnceTaskData defines the interface for task-specific data that can be stored in OnceTask.
@@ -87,6 +108,13 @@ type ScheduledTask interface {
 	GetScheduledTime() time.Time
 }
 
+// RecurrenceProvider is an optional interface that OnceTaskData implementations can implement
+// to define recurring task schedules. When implemented, the task becomes a generator that
+// spawns occurrence tasks according to the RRULE.
+type RecurrenceProvider interface {
+	GetRecurrence() *Recurrence
+}
+
 // This allows for reading the data field into a specific type.
 func (t *OnceTask[TaskKind]) ReadInto(v OnceTaskData[TaskKind]) error {
 	if t.Type != v.GetType() {
@@ -97,48 +125,6 @@ func (t *OnceTask[TaskKind]) ReadInto(v OnceTaskData[TaskKind]) error {
 		return err
 	}
 	return json.Unmarshal(jsonBytes, v)
-}
-
-// GetTaskState computes and returns the current execution state of the task.
-// The state is derived from the task's timestamp fields relative to the provided current time.
-// This method mirrors the frontend's getTaskStatus() logic for consistency.
-// Returns an error if any timestamp field contains invalid RFC3339 format.
-func (t *OnceTask[TaskKind]) GetTaskState(now time.Time) (TaskState, error) {
-	// Parse and check doneAt
-	if t.DoneAt != "" {
-		doneTime, err := time.Parse(time.RFC3339, t.DoneAt)
-		if err != nil {
-			return "", fmt.Errorf("failed to parse doneAt: %w", err)
-		}
-		if !doneTime.IsZero() {
-			return TaskStateCompleted, nil
-		}
-	}
-
-	// Parse and check leasedUntil
-	if t.LeasedUntil != "" {
-		leaseTime, err := time.Parse(time.RFC3339, t.LeasedUntil)
-		if err != nil {
-			return "", fmt.Errorf("failed to parse leasedUntil: %w", err)
-		}
-		if !leaseTime.IsZero() && leaseTime.After(now) {
-			return TaskStateLeased, nil
-		}
-	}
-
-	// Parse and check waitUntil
-	if t.WaitUntil != "" {
-		waitTime, err := time.Parse(time.RFC3339, t.WaitUntil)
-		if err != nil {
-			return "", fmt.Errorf("failed to parse waitUntil: %w", err)
-		}
-		if !waitTime.IsZero() && waitTime.After(now) {
-			return TaskStateWaiting, nil
-		}
-	}
-
-	// PENDING: doneAt == "" AND leasedUntil expired AND waitUntil <= now
-	return TaskStatePending, nil
 }
 
 // Use CreateTask() on the OnceTaskManager to create a new OnceTask.
@@ -160,14 +146,40 @@ func newOnceTask[TaskKind ~string](taskData OnceTaskData[TaskKind]) (*OnceTask[T
 		resourceKey = provider.GetResourceKey()
 	}
 
-	// Extract WaitUntil if the task data implements ScheduledTask
-	// Default to epoch time (zero time) for immediate execution
-	waitUntil := time.Time{}.Format(time.RFC3339) // Epoch: 0001-01-01T00:00:00Z
+	// Extract Recurrence if the task data implements RecurrenceProvider
+	var recurrence *Recurrence
+	if recurrenceProvider, ok := taskData.(RecurrenceProvider); ok {
+		recurrence = recurrenceProvider.GetRecurrence()
+	}
+
+	// Extract scheduled time if the task data implements ScheduledTask
+	var scheduledTime time.Time
 	if scheduledTask, ok := taskData.(ScheduledTask); ok {
-		scheduledTime := scheduledTask.GetScheduledTime()
-		if !scheduledTime.IsZero() {
-			waitUntil = scheduledTime.UTC().Format(time.RFC3339)
+		scheduledTime = scheduledTask.GetScheduledTime()
+	}
+
+	// Validate: cannot specify both Recurrence and a non-zero ScheduledTime
+	// Recurring tasks get their schedule from Recurrence, not ScheduledTask
+	if recurrence != nil && !scheduledTime.IsZero() {
+		return nil, fmt.Errorf("task %s: cannot specify both Recurrence and ScheduledTask - recurring tasks use Recurrence for scheduling", taskID)
+	}
+
+	// Calculate WaitUntil based on task type
+	var waitUntil string
+	if recurrence != nil {
+		// Recurring task: calculate first occurrence from DTStart
+		firstOccurrence, err := calculateFirstOccurrence(recurrence)
+		if err != nil {
+			return nil, fmt.Errorf("task %s: %w", taskID, err)
 		}
+
+		waitUntil = firstOccurrence.UTC().Format(time.RFC3339)
+	} else if !scheduledTime.IsZero() {
+		// One-time scheduled task: use ScheduledTask.GetScheduledTime()
+		waitUntil = scheduledTime.UTC().Format(time.RFC3339)
+	} else {
+		// Immediate execution: epoch time
+		waitUntil = time.Time{}.Format(time.RFC3339) // Epoch: 0001-01-01T00:00:00Z
 	}
 
 	return &OnceTask[TaskKind]{
@@ -176,9 +188,10 @@ func newOnceTask[TaskKind ~string](taskData OnceTaskData[TaskKind]) (*OnceTask[T
 		Data:        dataMap,
 		ResourceKey: resourceKey,
 		Env:         getTaskEnv(),
-		WaitUntil:   waitUntil, // Epoch time for immediate tasks, or scheduled time
+		WaitUntil:   waitUntil, // Derived from Recurrence.DTStart, ScheduledTime, or epoch
 		LeasedUntil: "",        // Initially empty, set when task is leased to an executor.
 		CreatedAt:   createdAt.UTC().Format(time.RFC3339),
-		DoneAt:      "", // Initially empty, set when task is completed
+		DoneAt:      "",         // Initially empty, set when task is completed
+		Recurrence:  recurrence, // nil = one-time task, set from RecurrenceProvider
 	}, nil
 }

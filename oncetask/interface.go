@@ -2,10 +2,12 @@ package oncetask
 
 import (
 	"context"
-	"time"
 )
 
 // OnceTaskHandler processes a single pending task.
+// Returns (result, nil) on success. Result can be nil if no output is needed.
+// Returns (nil, error) on failure; task will be retried according to config.
+//
 // One task kind can either have a single handler OR a resource key handler, but not both.
 //
 // This handler supports two execution strategies (determined dynamically by the task's ResourceKey):
@@ -17,7 +19,7 @@ import (
 //  2. OnePerResourceKey (ResourceKey is non-empty):
 //     Only one task with the same ResourceKey executes at a time.
 //     Execution is serialized (queued) for that specific ResourceKey - ordering not guaranteed.
-type OnceTaskHandler[TaskKind ~string] func(ctx context.Context, task *OnceTask[TaskKind]) error
+type OnceTaskHandler[TaskKind ~string] func(ctx context.Context, task *OnceTask[TaskKind]) (any, error)
 
 // OnceTaskResourceKeyHandler processes all pending tasks with the
 // same non-empty resource key in a single execution (Pipelined Execution).
@@ -29,12 +31,25 @@ type OnceTaskHandler[TaskKind ~string] func(ctx context.Context, task *OnceTask[
 // If the ResourceKey is empty, the handler behaves like a single task handler (Concurrent strategy).
 //
 // Return Values:
-//   - nil: All tasks in the batch are marked as successfully completed.
-//   - error: All tasks in the batch are failed and will be retried.
-type OnceTaskResourceKeyHandler[TaskKind ~string] func(ctx context.Context, tasks []OnceTask[TaskKind]) error
+//   - (result, nil): All tasks in the batch are marked as successfully completed. Result is stored in each task's Result field.
+//   - (nil, error): All tasks in the batch are failed and will be retried.
+type OnceTaskResourceKeyHandler[TaskKind ~string] func(ctx context.Context, tasks []OnceTask[TaskKind]) (any, error)
 
-// Lease duration for task execution
-const leaseDuration = 10 * time.Minute
+// NoResult adapts a single-task handler that doesn't return a result.
+// Use this for handlers that only need to return an error on failure.
+func NoResult[TaskKind ~string](fn func(ctx context.Context, task *OnceTask[TaskKind]) error) OnceTaskHandler[TaskKind] {
+	return func(ctx context.Context, task *OnceTask[TaskKind]) (any, error) {
+		return nil, fn(ctx, task)
+	}
+}
+
+// NoResultResourceKey adapts a resource-key handler that doesn't return a result.
+// Use this for handlers that only need to return an error on failure.
+func NoResultResourceKey[TaskKind ~string](fn func(ctx context.Context, tasks []OnceTask[TaskKind]) error) OnceTaskResourceKeyHandler[TaskKind] {
+	return func(ctx context.Context, tasks []OnceTask[TaskKind]) (any, error) {
+		return nil, fn(ctx, tasks)
+	}
+}
 
 // OnceTaskManager defines the interface for managing once-execution tasks.
 type OnceTaskManager[TaskKind ~string] interface {
@@ -46,9 +61,10 @@ type OnceTaskManager[TaskKind ~string] interface {
 	CreateTask(ctx context.Context, taskData OnceTaskData[TaskKind]) (bool, error)
 
 	// RegisterTaskHandler listens for new tasks and executes the handler function for each task.
-	// The handler function is expected to successfully execute only once.
-	// If the handler returns an error, the task will be retried.
-	RegisterTaskHandler(taskType TaskKind, handler OnceTaskHandler[TaskKind]) error
+	// Handler returns (result, nil) on success or (nil, error) on failure.
+	// Use NoResult() adapter for handlers that don't produce a result.
+	// See HandlerOption and DefaultHandlerConfig for configuration options.
+	RegisterTaskHandler(taskType TaskKind, handler OnceTaskHandler[TaskKind], opts ...HandlerOption) error
 
 	// RegisterResourceKeyHandler listens for new tasks and executes the handler for all tasks with the same resource key.
 	// All pending tasks with the same resource key are grouped together and ordered by WaitUntil.
@@ -56,7 +72,10 @@ type OnceTaskManager[TaskKind ~string] interface {
 	// If the handler returns nil, all tasks for that resource key are marked as done.
 	// If the handler returns an error, all tasks for that resource key will be retried.
 	// Tasks without a resource key are processed individually.
-	RegisterResourceKeyHandler(taskType TaskKind, handler OnceTaskResourceKeyHandler[TaskKind]) error
+	// Handler returns (result, nil) on success or (nil, error) on failure.
+	// Use NoResultResourceKey() adapter for handlers that don't produce a result.
+	// See HandlerOption and DefaultHandlerConfig for configuration options.
+	RegisterResourceKeyHandler(taskType TaskKind, handler OnceTaskResourceKeyHandler[TaskKind], opts ...HandlerOption) error
 
 	// GetTasksByResourceKey retrieves all tasks with the given resource key.
 	// Returns tasks ordered by CreatedAt (oldest first).
