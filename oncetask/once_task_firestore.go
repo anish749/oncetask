@@ -465,3 +465,141 @@ func (m *firestoreOnceTaskManager[TaskKind]) GetTasksByResourceKey(ctx context.C
 
 	return tasks, nil
 }
+
+// GetTasksByIds retrieves tasks by their IDs from Firestore.
+// Returns tasks in no guaranteed order.
+// Tasks not found are omitted from the result (no error).
+// The tasks must belong to the current environment (from ONCE_TASK_ENV).
+func (m *firestoreOnceTaskManager[TaskKind]) GetTasksByIds(ctx context.Context, ids []string) ([]OnceTask[TaskKind], error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	// Build document references for all IDs
+	docRefs := make([]*firestore.DocumentRef, len(ids))
+	for i, id := range ids {
+		docRefs[i] = m.queryBuilder.doc(id)
+	}
+
+	// Fetch all documents in a single batch
+	docSnaps, err := m.client.GetAll(ctx, docRefs)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to fetch tasks by IDs", "count", len(ids), "error", err)
+		return nil, fmt.Errorf("failed to fetch tasks by IDs: %w", err)
+	}
+
+	env := getTaskEnv()
+	tasks := make([]OnceTask[TaskKind], 0, len(docSnaps))
+	for _, docSnap := range docSnaps {
+		if !docSnap.Exists() {
+			continue // Task not found, skip
+		}
+
+		var task OnceTask[TaskKind]
+		if err := docSnap.DataTo(&task); err != nil {
+			slog.ErrorContext(ctx, "Failed to unmarshal task", "taskId", docSnap.Ref.ID, "error", err)
+			return nil, fmt.Errorf("failed to unmarshal task %s: %w", docSnap.Ref.ID, err)
+		}
+
+		// Filter by environment (since GetAll doesn't support queries)
+		if task.Env != env {
+			continue
+		}
+
+		tasks = append(tasks, task)
+	}
+
+	return tasks, nil
+}
+
+// CreateTasks creates multiple once tasks using Firestore BulkWriter.
+//
+// This method is NON-ATOMIC: individual task creations can succeed or fail independently.
+// This is intentional - it allows partial success when some tasks already exist or fail,
+// rather than failing the entire batch.
+//
+// Idempotency: Tasks that already exist (same ID) are silently skipped and do not
+// contribute to the returned error. This makes it safe to retry the entire batch.
+//
+// Returns:
+//   - (created count, nil) if all tasks were created or already existed
+//   - (created count, error) if at least one task failed for a reason other than already-existing
+//
+// The returned error aggregates all non-AlreadyExists failures using errors.Join.
+func (m *firestoreOnceTaskManager[TaskKind]) CreateTasks(ctx context.Context, taskDataList []OnceTaskData[TaskKind]) (int, error) {
+	if len(taskDataList) == 0 {
+		return 0, nil
+	}
+
+	bw := m.client.BulkWriter(ctx)
+
+	// Track jobs to collect results after flush.
+	// BulkWriter queues writes and executes them in batches of up to 20.
+	type jobInfo struct {
+		job    *firestore.BulkWriterJob
+		taskID string
+	}
+	jobs := make([]jobInfo, 0, len(taskDataList))
+	taskTypes := make(map[TaskKind]struct{})
+
+	// Collect all errors (bulk writer queuing + write failures). We don't return early
+	// because some bulk writes may still succeed.
+	var errs []error
+
+	// Queue all creates - these are not executed until End() is called
+	for _, taskData := range taskDataList {
+		task, err := newOnceTask(taskData)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to create task struct: %w", err))
+			continue
+		}
+
+		doc := m.queryBuilder.doc(task.Id)
+		job, err := bw.Create(doc, task)
+		if err != nil {
+			// BulkWriter is closed or other immediate error
+			errs = append(errs, fmt.Errorf("failed to queue task %s: %w", task.Id, err))
+			continue
+		}
+
+		jobs = append(jobs, jobInfo{job: job, taskID: task.Id})
+		taskTypes[task.Type] = struct{}{}
+	}
+
+	// Flush all writes and close the BulkWriter.
+	// After End(), all jobs will have results available.
+	bw.End()
+
+	// Collect results from each job.
+	// Each job can succeed or fail independently (non-atomic).
+	var created int
+	for _, j := range jobs {
+		_, err := j.job.Results()
+		if err == nil {
+			created++
+			continue
+		}
+
+		// AlreadyExists is expected for idempotent retries - silently skip
+		if status.Code(err) == codes.AlreadyExists {
+			slog.InfoContext(ctx, "Task already exists, skipped", "taskId", j.taskID)
+			continue
+		}
+
+		// Any other error is a real failure
+		slog.ErrorContext(ctx, "Failed to create task", "taskId", j.taskID, "error", err)
+		errs = append(errs, fmt.Errorf("task %s: %w", j.taskID, err))
+	}
+
+	// Trigger evaluation for all task types
+	for taskType := range taskTypes {
+		m.evaluateNow(taskType)
+	}
+
+	// Return aggregated error if any tasks failed (excluding AlreadyExists)
+	if len(errs) > 0 {
+		return created, fmt.Errorf("failed to create %d tasks: %w", len(errs), errors.Join(errs...))
+	}
+
+	return created, nil
+}

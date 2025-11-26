@@ -32,7 +32,7 @@ func processTaskFailure(
 	newErrors := append(currentErrors, newError)
 
 	if retryPolicy.ShouldRetry(attempts) {
-		backoffDuration := retryPolicy.NextRetryDelay(attempts)
+		backoffDuration := retryPolicy.NextRetryDelay(attempts, execErr)
 		waitUntil := now.Add(backoffDuration).Format(time.RFC3339)
 
 		return []firestore.Update{

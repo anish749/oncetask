@@ -11,7 +11,8 @@ type RetryPolicy interface {
 
 	// NextRetryDelay returns the duration to wait before the next retry.
 	// attempts is the current attempt count.
-	NextRetryDelay(attempts int) time.Duration
+	// err is the error returned by the handler, which can be used to determine the delay.
+	NextRetryDelay(attempts int, err error) time.Duration
 }
 
 // ExponentialBackoffPolicy retries with exponential backoff.
@@ -30,7 +31,7 @@ func (p ExponentialBackoffPolicy) ShouldRetry(attempts int) bool {
 	return attempts < p.MaxAttempts
 }
 
-func (p ExponentialBackoffPolicy) NextRetryDelay(attempts int) time.Duration {
+func (p ExponentialBackoffPolicy) NextRetryDelay(attempts int, err error) time.Duration {
 	baseDelay := p.BaseDelay
 	if baseDelay == 0 {
 		baseDelay = 1 * time.Second
@@ -71,7 +72,7 @@ func (p FixedDelayPolicy) ShouldRetry(attempts int) bool {
 	return attempts < p.MaxAttempts
 }
 
-func (p FixedDelayPolicy) NextRetryDelay(attempts int) time.Duration {
+func (p FixedDelayPolicy) NextRetryDelay(attempts int, err error) time.Duration {
 	return p.Delay
 }
 
@@ -82,6 +83,6 @@ func (p NoRetryPolicy) ShouldRetry(attempts int) bool {
 	return false
 }
 
-func (p NoRetryPolicy) NextRetryDelay(attempts int) time.Duration {
+func (p NoRetryPolicy) NextRetryDelay(attempts int, err error) time.Duration {
 	return 0
 }

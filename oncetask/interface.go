@@ -60,6 +60,22 @@ type OnceTaskManager[TaskKind ~string] interface {
 	// Returns false if a task with the same ID already exists or error.
 	CreateTask(ctx context.Context, taskData OnceTaskData[TaskKind]) (bool, error)
 
+	// CreateTasks creates multiple once tasks using Firestore BulkWriter.
+	//
+	// This method is NON-ATOMIC: individual task creations can succeed or fail independently.
+	// This is intentional - it allows partial success when some tasks already exist or fail,
+	// rather than failing the entire batch.
+	//
+	// Idempotency: Tasks that already exist (same ID) are silently skipped and do not
+	// contribute to the returned error. This makes it safe to retry the entire batch.
+	//
+	// Returns:
+	//   - (created count, nil) if all tasks were created or already existed
+	//   - (created count, error) if at least one task failed for a reason other than already-existing
+	//
+	// The returned error aggregates all non-AlreadyExists failures using errors.Join.
+	CreateTasks(ctx context.Context, taskDataList []OnceTaskData[TaskKind]) (int, error)
+
 	// RegisterTaskHandler listens for new tasks and executes the handler function for each task.
 	// Handler returns (result, nil) on success or (nil, error) on failure.
 	// Use NoResult() adapter for handlers that don't produce a result.
@@ -81,4 +97,10 @@ type OnceTaskManager[TaskKind ~string] interface {
 	// Returns tasks ordered by CreatedAt (oldest first).
 	// The tasks must belong to the current environment (from ONCE_TASK_ENV).
 	GetTasksByResourceKey(ctx context.Context, resourceKey string) ([]OnceTask[TaskKind], error)
+
+	// GetTasksByIds retrieves tasks by their IDs.
+	// Returns tasks in no guaranteed order.
+	// Tasks not found are omitted from the result (no error).
+	// The tasks must belong to the current environment (from ONCE_TASK_ENV).
+	GetTasksByIds(ctx context.Context, ids []string) ([]OnceTask[TaskKind], error)
 }
