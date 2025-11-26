@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -134,7 +135,9 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterTaskHandler(
 	evaluateChan := make(chan struct{}, 1)
 	m.evaluateChans[taskType] = evaluateChan
 
-	go m.runLoop(taskType, evaluateChan)
+	for i := 0; i < config.Concurrency; i++ {
+		go m.runLoop(taskType, evaluateChan)
+	}
 
 	return nil
 }
@@ -175,7 +178,9 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterResourceKeyHandler(
 	evaluateChan := make(chan struct{}, 1)
 	m.evaluateChans[taskType] = evaluateChan
 
-	go m.runLoop(taskType, evaluateChan)
+	for i := 0; i < config.Concurrency; i++ {
+		go m.runLoop(taskType, evaluateChan)
+	}
 
 	return nil
 }
@@ -304,80 +309,78 @@ func (m *firestoreOnceTaskManager[TaskKind]) claimTasks(
 	hasResourceKeyHandler bool,
 ) ([]OnceTask[TaskKind], error) {
 	var tasks []OnceTask[TaskKind]
-	now := time.Now().UTC()
 
 	err := m.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		// 1. Find a candidate task
-		// We look for ONE task that is ready.
-		query := m.queryBuilder.
-			readyTasks(string(taskType), now).
-			Limit(1)
+		now := time.Now().UTC()
 
-		docs, err := tx.Documents(query).GetAll()
+		// Reset tasks slice on retry
+		tasks = nil
+
+		// 1. Find and lock a candidate task
+		candidateQuery := m.queryBuilder.readyTasks(string(taskType), now).Limit(1)
+
+		candidateSnaps, err := queryAndLock(tx, candidateQuery)
 		if err != nil {
 			return fmt.Errorf("failed to query candidate task: %w", err)
 		}
-		if len(docs) == 0 {
+		if len(candidateSnaps) == 0 {
 			return nil // No tasks ready
 		}
 
-		candidateDoc := docs[0]
-		candidateRef := candidateDoc.Ref
-		candidateID := candidateRef.ID
-
+		candidateSnap := candidateSnaps[0]
 		var candidate OnceTask[TaskKind]
-		if err := candidateDoc.DataTo(&candidate); err != nil {
+		if err := candidateSnap.DataTo(&candidate); err != nil {
 			return fmt.Errorf("failed to parse candidate task: %w", err)
 		}
 
-		// Double check lease (in case query was slightly stale or concurrent)
+		// Double check lease (in case of transaction retry with fresh data)
 		if err := checkTaskLease(candidate.LeasedUntil, now); err != nil {
 			return err
 		}
 
-		// 2. Determine Batch Scope (Single vs Resource Group)
 		newLeaseExpiry := now.Add(config.LeaseDuration).Format(time.RFC3339)
 
+		// 2. Determine Batch Scope (Single vs Resource Group)
 		if hasResourceKeyHandler && candidate.ResourceKey != "" {
 			// RESOURCE KEY MODE
-			// Fetch ALL ready tasks for this resource key
+			// Fetch and lock ALL ready tasks for this resource key
 			batchQuery := m.queryBuilder.readyTasksForResourceKey(string(taskType), candidate.ResourceKey, now)
 
-			batchDocs, err := tx.Documents(batchQuery).GetAll()
+			docSnaps, err := queryAndLock(tx, batchQuery)
 			if err != nil {
 				return fmt.Errorf("failed to fetch resource key tasks: %w", err)
 			}
 
-			tasks = make([]OnceTask[TaskKind], 0, len(batchDocs))
+			tasks = make([]OnceTask[TaskKind], 0, len(docSnaps))
 
-			// In-memory check for mutual exclusion and lease all tasks
-			for _, doc := range batchDocs {
+			// Check lease status and lease all tasks
+			for _, docSnap := range docSnaps {
 				var t OnceTask[TaskKind]
-				if err := doc.DataTo(&t); err != nil {
+				if err := docSnap.DataTo(&t); err != nil {
 					return fmt.Errorf("failed to parse task: %w", err)
 				}
 
-				// Check if ANY task in this group is currently running (leased)
+				// Check if this task is currently running (leased)
 				if err := checkTaskLease(t.LeasedUntil, now); err != nil {
 					return err
 				}
 
 				// Task is free, lease it and add to batch
-				if err := leaseTask(tx, doc.Ref, &t, newLeaseExpiry); err != nil {
+				if err := leaseTask(tx, docSnap.Ref, &t, newLeaseExpiry); err != nil {
 					return err
 				}
 				tasks = append(tasks, t)
 			}
-
 		} else {
 			// SINGLE TASK MODE
-			// Check mutual exclusion (handles empty resourceKey internally)
-			if err := checkResourceAvailable(tx, m.queryBuilder, string(taskType), candidate.ResourceKey, candidateID, now); err != nil {
+			// Check if another task with the same resourceKey is already being processed.
+			// This ensures mutual exclusion even when using a single task handler with resourceKey.
+			if err := checkResourceAvailable(tx, m.queryBuilder, string(taskType), candidate.ResourceKey, now); err != nil {
 				return err
 			}
 
 			// Lease the single candidate
-			if err := leaseTask(tx, candidateRef, &candidate, newLeaseExpiry); err != nil {
+			if err := leaseTask(tx, candidateSnap.Ref, &candidate, newLeaseExpiry); err != nil {
 				return err
 			}
 			tasks = []OnceTask[TaskKind]{candidate}
@@ -387,6 +390,15 @@ func (m *firestoreOnceTaskManager[TaskKind]) claimTasks(
 	})
 
 	if err != nil {
+		// Aborted errors are treated as errLeaseNotAvailable for graceful retry.
+		// Cross-transaction contention is expected with concurrent workers, so we don't log it.
+		// Other Aborted reasons are unexpected and should be logged.
+		if status.Code(err) == codes.Aborted {
+			if !strings.Contains(err.Error(), "cross-transaction contention") {
+				slog.WarnContext(ctx, "Transaction aborted for unexpected reason", "error", err)
+			}
+			return nil, errLeaseNotAvailable
+		}
 		return nil, err
 	}
 

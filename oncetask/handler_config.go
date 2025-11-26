@@ -6,6 +6,7 @@ import "time"
 type HandlerConfig struct {
 	RetryPolicy   RetryPolicy   // Retry policy for failed tasks
 	LeaseDuration time.Duration // Duration for which a task is leased during execution
+	Concurrency   int           // Number of concurrent workers processing tasks
 }
 
 // DefaultHandlerConfig provides sensible defaults for all handlers.
@@ -17,6 +18,7 @@ var DefaultHandlerConfig = HandlerConfig{
 		Multiplier:  2.0,
 	},
 	LeaseDuration: 10 * time.Minute,
+	Concurrency:   1,
 }
 
 // HandlerOption is a functional option for configuring handlers.
@@ -40,5 +42,15 @@ func WithNoRetry() HandlerOption {
 func WithLeaseDuration(d time.Duration) HandlerOption {
 	return func(c *HandlerConfig) {
 		c.LeaseDuration = d
+	}
+}
+
+// WithConcurrency sets the number of concurrent workers processing tasks.
+// Values less than 1 are ignored; default is 1 (serial execution).
+func WithConcurrency(n int) HandlerOption {
+	return func(c *HandlerConfig) {
+		if n > 0 {
+			c.Concurrency = n
+		}
 	}
 }

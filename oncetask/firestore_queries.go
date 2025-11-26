@@ -52,14 +52,13 @@ func (q *firestoreQueryBuilder) readyTasksForResourceKey(taskType, resourceKey s
 
 // activeLeasesForResourceKey returns tasks with active leases for a resource key.
 // Used for mutual exclusion checks - ensures only one task per resource key runs at a time.
-func (q *firestoreQueryBuilder) activeLeasesForResourceKey(taskType, resourceKey, excludeTaskID string, now time.Time) firestore.Query {
+func (q *firestoreQueryBuilder) activeLeasesForResourceKey(taskType, resourceKey string, now time.Time) firestore.Query {
 	nowStr := now.Format(time.RFC3339)
 	return q.base().
 		Where("type", "==", taskType).
 		Where("resourceKey", "==", resourceKey).
 		Where("doneAt", "==", "").
-		Where("leasedUntil", ">", nowStr).
-		Where("id", "!=", excludeTaskID)
+		Where("leasedUntil", ">", nowStr)
 }
 
 // byResourceKey returns all tasks (any status) for a resource key.
