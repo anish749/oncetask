@@ -62,7 +62,7 @@ func TestNewOnceTask_WaitUntil(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		task           OnceTaskData[string]
+		task           Data[string]
 		wantWaitUntil  string
 		wantRecurrence bool
 	}{
@@ -149,7 +149,7 @@ func TestNewOnceTask_RecurrenceErrors(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		task            OnceTaskData[string]
+		task            Data[string]
 		wantErrContains string
 	}{
 		{

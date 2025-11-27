@@ -45,21 +45,21 @@ import (
 
 // Core types
 type OnceTask[TaskKind ~string] = oncetask.OnceTask[TaskKind]
-type OnceTaskData[TaskKind comparable] = oncetask.OnceTaskData[TaskKind]
-type OnceTaskManager[TaskKind ~string] = oncetask.OnceTaskManager[TaskKind]
+type Data[TaskKind comparable] = oncetask.Data[TaskKind]
+type Manager[TaskKind ~string] = oncetask.Manager[TaskKind]
 
 // Handler types and adapters
-type OnceTaskHandler[TaskKind ~string] = oncetask.OnceTaskHandler[TaskKind]
-type OnceTaskResourceKeyHandler[TaskKind ~string] = oncetask.OnceTaskResourceKeyHandler[TaskKind]
+type Handler[TaskKind ~string] = oncetask.Handler[TaskKind]
+type ResourceKeyHandler[TaskKind ~string] = oncetask.ResourceKeyHandler[TaskKind]
 
 // Handler adapters for functions that don't return results
 // NoResult adapts a single-task handler that doesn't return a result.
-func NoResult[TaskKind ~string](fn func(ctx context.Context, task *OnceTask[TaskKind]) error) OnceTaskHandler[TaskKind] {
+func NoResult[TaskKind ~string](fn func(ctx context.Context, task *OnceTask[TaskKind]) error) Handler[TaskKind] {
 	return oncetask.NoResult(fn)
 }
 
 // NoResultResourceKey adapts a resource-key handler that doesn't return a result.
-func NoResultResourceKey[TaskKind ~string](fn func(ctx context.Context, tasks []OnceTask[TaskKind]) error) OnceTaskResourceKeyHandler[TaskKind] {
+func NoResultResourceKey[TaskKind ~string](fn func(ctx context.Context, tasks []OnceTask[TaskKind]) error) ResourceKeyHandler[TaskKind] {
 	return oncetask.NoResultResourceKey(fn)
 }
 
@@ -73,7 +73,7 @@ var WithLeaseDuration = oncetask.WithLeaseDuration
 var WithConcurrency = oncetask.WithConcurrency
 
 // WithCancellationHandler registers a cleanup handler for cancelled tasks.
-func WithCancellationHandler[TaskKind ~string](handler OnceTaskHandler[TaskKind]) HandlerOption {
+func WithCancellationHandler[TaskKind ~string](handler Handler[TaskKind]) HandlerOption {
 	return oncetask.WithCancellationHandler(handler)
 }
 
@@ -108,7 +108,7 @@ type RecurrenceProvider = oncetask.RecurrenceProvider
 
 // Manager constructor
 // NewFirestoreOnceTaskManager creates a new Firestore-backed task manager.
-func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (OnceTaskManager[TaskKind], func()) {
+func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (Manager[TaskKind], func()) {
 	return oncetask.NewFirestoreOnceTaskManager[TaskKind](client)
 }
 

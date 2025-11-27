@@ -10,7 +10,7 @@ type handlerConfig struct {
 	Concurrency             int           // Number of concurrent workers processing tasks
 
 	// cancellationTaskHandler is an optional cleanup handler for cancelled tasks.
-	// Type: OnceTaskHandler[TaskKind].
+	// Type: Handler[TaskKind].
 	// Always processes tasks one at a time, regardless of whether the normal handler is single-task or resource-key.
 	// Use WithCancellationHandler() to set this field - it should not be set directly.
 	cancellationTaskHandler any
@@ -82,7 +82,7 @@ func WithConcurrency(n int) HandlerOption {
 //	    // Perform cleanup operations
 //	    return nil, nil
 //	})
-func WithCancellationHandler[TaskKind ~string](handler OnceTaskHandler[TaskKind]) HandlerOption {
+func WithCancellationHandler[TaskKind ~string](handler Handler[TaskKind]) HandlerOption {
 	return func(c *handlerConfig) {
 		c.cancellationTaskHandler = handler
 	}

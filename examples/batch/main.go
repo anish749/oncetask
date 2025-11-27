@@ -73,7 +73,7 @@ type BatchItem struct {
 	Payload string `json:"payload"`
 }
 
-var _ oncetask.OnceTaskData[TaskKind] = (*BatchItem)(nil)
+var _ oncetask.Data[TaskKind] = (*BatchItem)(nil)
 
 func (t BatchItem) GetType() TaskKind { return TaskKindBatchItem }
 
@@ -182,7 +182,7 @@ func main() {
 }
 
 // registerHandlers sets up the task handlers for batch processing.
-func registerHandlers(manager oncetask.OnceTaskManager[TaskKind]) error {
+func registerHandlers(manager oncetask.Manager[TaskKind]) error {
 	// Register the batch item handler
 	err := manager.RegisterTaskHandler(
 		TaskKindBatchItem,
@@ -252,7 +252,7 @@ func batchItemHandler(ctx context.Context, task *oncetask.OnceTask[TaskKind]) (a
 
 // createBatchCompletionHandler creates a handler that monitors batch completion.
 // It needs access to the manager to query item tasks.
-func createBatchCompletionHandler(manager oncetask.OnceTaskManager[TaskKind]) oncetask.OnceTaskHandler[TaskKind] {
+func createBatchCompletionHandler(manager oncetask.Manager[TaskKind]) oncetask.Handler[TaskKind] {
 	return func(ctx context.Context, task *oncetask.OnceTask[TaskKind]) (any, error) {
 		var data BatchCompletionTaskData
 		if err := task.ReadInto(&data); err != nil {
@@ -318,10 +318,10 @@ func sendNotification(ctx context.Context, data BatchCompletionTaskData, complet
 }
 
 // createBatchTasks creates item tasks and a monitoring task from a Batch.
-func createBatchTasks(ctx context.Context, manager oncetask.OnceTaskManager[TaskKind], batch Batch) error {
+func createBatchTasks(ctx context.Context, manager oncetask.Manager[TaskKind], batch Batch) error {
 	// Step 1: Build all item tasks and collect their IDs
 	itemTaskIds := make([]string, len(batch.Items))
-	itemsData := make([]oncetask.OnceTaskData[TaskKind], len(batch.Items))
+	itemsData := make([]oncetask.Data[TaskKind], len(batch.Items))
 	for i, item := range batch.Items {
 		itemTaskIds[i] = item.GenerateIdempotentID()
 		itemsData[i] = item
