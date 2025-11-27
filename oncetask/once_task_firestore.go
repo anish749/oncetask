@@ -335,7 +335,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) claimTasks(
 		// 1. Find and lock a candidate task
 		candidateQuery := m.queryBuilder.readyTasks(string(taskType), now).Limit(1)
 
-		candidateSnaps, err := queryAndLock(tx, candidateQuery)
+		candidateSnaps, err := queryAndLock(tx, &candidateQuery)
 		if err != nil {
 			return fmt.Errorf("failed to query candidate task: %w", err)
 		}
@@ -362,7 +362,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) claimTasks(
 			// Fetch and lock ALL ready tasks for this resource key
 			batchQuery := m.queryBuilder.readyTasksForResourceKey(string(taskType), candidate.ResourceKey, now)
 
-			docSnaps, err := queryAndLock(tx, batchQuery)
+			docSnaps, err := queryAndLock(tx, &batchQuery)
 			if err != nil {
 				return fmt.Errorf("failed to fetch resource key tasks: %w", err)
 			}
