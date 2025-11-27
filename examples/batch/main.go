@@ -28,7 +28,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
-	"github.com/anish749/go-donna/pkg/oncetask"
+	"github.com/anish749/oncetask"
 )
 
 // TaskKind defines the types of tasks in our batch processing system.
