@@ -1,0 +1,58 @@
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck        # Check for unchecked errors
+    - gosimple        # Simplify code
+    - govet           # Reports suspicious constructs
+    - ineffassign     # Detects ineffectual assignments
+    - staticcheck     # Go static analysis
+    - unused          # Checks for unused constants, variables, functions and types
+    - gofmt           # Checks if code is gofmt-ed
+    - goimports       # Check import statements are formatted
+    - misspell        # Finds commonly misspelled words
+    - revive          # Fast, configurable, extensible, flexible, and beautiful linter for Go
+    - typecheck       # Type-checks Go code
+    - gosec           # Inspects source code for security problems
+    - gocritic        # Provides diagnostics that check for bugs, performance and style issues
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  govet:
+    enable-all: true
+    disable:
+      - shadow
+
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        disabled: false
+
+  gosec:
+    excludes:
+      - G104  # Allow unhandled errors in some cases (covered by errcheck)
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  # Exclude some linters from running on tests files
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
