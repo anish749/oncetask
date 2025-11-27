@@ -7,7 +7,7 @@ import (
 
 func TestGetStatus(t *testing.T) {
 	now := time.Now()
-	epochTime := time.Time{}.Format(time.RFC3339)
+	epochTime := NoWait
 
 	tests := []struct {
 		name       string

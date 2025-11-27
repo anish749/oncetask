@@ -118,7 +118,7 @@ type OnceTaskManager[TaskKind ~string] interface {
 
 	// CancelTask marks a single task as cancelled.
 	// Idempotent: no-op if task is already done or cancelled.
-	// Sets isCancelled=true, cancelledAt=now, waitUntil=epoch (immediate execution).
+	// Sets isCancelled=true, cancelledAt=now, waitUntil=NoWait (immediate execution).
 	CancelTask(ctx context.Context, taskID string) error
 
 	// CancelTasksByResourceKey marks all non-done tasks with resourceKey as cancelled.

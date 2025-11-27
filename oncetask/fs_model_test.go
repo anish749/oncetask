@@ -56,7 +56,7 @@ func (t taskWithResourceKey) GetResourceKey() string       { return t.resourceKe
 // Test cases
 
 func TestNewOnceTask_WaitUntil(t *testing.T) {
-	epochTime := time.Time{}.Format(time.RFC3339)
+	epochTime := NoWait
 	scheduledTime := time.Date(2025, 6, 15, 14, 30, 0, 0, time.UTC)
 	dtstart := time.Date(2025, 1, 1, 9, 0, 0, 0, time.UTC)
 

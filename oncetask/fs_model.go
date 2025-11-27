@@ -11,6 +11,9 @@ const (
 	CollectionOnceTasks string = "onceTasks"
 	EnvVariable         string = "ONCE_TASK_ENV"
 	DefaultEnv          string = "DEFAULT"
+	// NoWait is the zero value for waitUntil, representing immediate execution (epoch time).
+	// Use this constant instead of calling time.Time{}.Format(time.RFC3339) everywhere.
+	NoWait string = "0001-01-01T00:00:00Z"
 )
 
 // TaskError represents a single failed execution attempt.
@@ -182,8 +185,8 @@ func newOnceTask[TaskKind ~string](taskData OnceTaskData[TaskKind]) (*OnceTask[T
 		// One-time scheduled task: use ScheduledTask.GetScheduledTime()
 		waitUntil = scheduledTime.UTC().Format(time.RFC3339)
 	} else {
-		// Immediate execution: epoch time
-		waitUntil = time.Time{}.Format(time.RFC3339) // Epoch: 0001-01-01T00:00:00Z
+		// Immediate execution: use NoWait
+		waitUntil = NoWait
 	}
 
 	return &OnceTask[TaskKind]{
@@ -192,7 +195,7 @@ func newOnceTask[TaskKind ~string](taskData OnceTaskData[TaskKind]) (*OnceTask[T
 		Data:        dataMap,
 		ResourceKey: resourceKey,
 		Env:         getTaskEnv(),
-		WaitUntil:   waitUntil, // Derived from Recurrence.DTStart, ScheduledTime, or epoch
+		WaitUntil:   waitUntil, // Derived from Recurrence.DTStart, ScheduledTime, or NoWait
 		LeasedUntil: "",        // Initially empty, set when task is leased to an executor.
 		CreatedAt:   createdAt.UTC().Format(time.RFC3339),
 		DoneAt:      "",         // Initially empty, set when task is completed
