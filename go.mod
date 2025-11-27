@@ -1,6 +1,6 @@
 module github.com/anish749/oncetask
 
-go 1.25
+go 1.24
 
 require (
 	cloud.google.com/go/firestore v1.17.0
