@@ -115,7 +115,7 @@ type BatchCompletionRetryPolicy struct {
 	MaxDelay time.Duration // Delay when just started (e.g., 1min)
 }
 
-func (p BatchCompletionRetryPolicy) ShouldRetry(attempts int) bool {
+func (p BatchCompletionRetryPolicy) ShouldRetry(attempts int, err error) bool {
 	return true // Unlimited retries - keep checking until batch is complete
 }
 

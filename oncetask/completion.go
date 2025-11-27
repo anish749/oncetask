@@ -37,7 +37,7 @@ func processTaskFailure[TaskKind ~string](
 	}
 	newErrors := append(task.Errors, newError)
 
-	if retryPolicy.ShouldRetry(task.Attempts) {
+	if retryPolicy.ShouldRetry(task.Attempts, execErr) {
 		backoffDuration := retryPolicy.NextRetryDelay(task.Attempts, execErr)
 		waitUntil := now.Add(backoffDuration).Format(time.RFC3339)
 

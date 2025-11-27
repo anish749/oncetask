@@ -7,7 +7,7 @@ import "time"
 type RetryPolicy interface {
 	// ShouldRetry returns true if the task should be retried after failure.
 	// attempts is the current attempt count (1 = first attempt, 2 = first retry, etc.)
-	ShouldRetry(attempts int) bool
+	ShouldRetry(attempts int, err error) bool
 
 	// NextRetryDelay returns the duration to wait before the next retry.
 	// attempts is the current attempt count.
@@ -24,7 +24,7 @@ type ExponentialBackoffPolicy struct {
 	Multiplier  float64       // Multiplier per attempt (default: 2.0)
 }
 
-func (p ExponentialBackoffPolicy) ShouldRetry(attempts int) bool {
+func (p ExponentialBackoffPolicy) ShouldRetry(attempts int, err error) bool {
 	if p.MaxAttempts == 0 {
 		return true // Unlimited retries
 	}
@@ -65,7 +65,7 @@ type FixedDelayPolicy struct {
 	Delay       time.Duration // Delay between retries
 }
 
-func (p FixedDelayPolicy) ShouldRetry(attempts int) bool {
+func (p FixedDelayPolicy) ShouldRetry(attempts int, err error) bool {
 	if p.MaxAttempts == 0 {
 		return true
 	}
@@ -79,7 +79,7 @@ func (p FixedDelayPolicy) NextRetryDelay(attempts int, err error) time.Duration 
 // NoRetryPolicy never retries - tasks fail permanently on first error.
 type NoRetryPolicy struct{}
 
-func (p NoRetryPolicy) ShouldRetry(attempts int) bool {
+func (p NoRetryPolicy) ShouldRetry(attempts int, err error) bool {
 	return false
 }
 
