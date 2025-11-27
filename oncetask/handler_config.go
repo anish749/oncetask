@@ -4,9 +4,16 @@ import "time"
 
 // HandlerConfig holds configuration options for a task handler.
 type HandlerConfig struct {
-	RetryPolicy   RetryPolicy   // Retry policy for failed tasks
-	LeaseDuration time.Duration // Duration for which a task is leased during execution
-	Concurrency   int           // Number of concurrent workers processing tasks
+	RetryPolicy             RetryPolicy   // Retry policy for normal task execution
+	CancellationRetryPolicy RetryPolicy   // Retry policy for cancellation handlers (separate)
+	LeaseDuration           time.Duration // Duration for which a task is leased during execution
+	Concurrency             int           // Number of concurrent workers processing tasks
+
+	// cancellationTaskHandler is an optional cleanup handler for cancelled tasks.
+	// Type: OnceTaskHandler[TaskKind].
+	// Always processes tasks one at a time, regardless of whether the normal handler is single-task or resource-key.
+	// Use WithCancellationHandler() to set this field - it should not be set directly.
+	cancellationTaskHandler any
 }
 
 // DefaultHandlerConfig provides sensible defaults for all handlers.
@@ -17,8 +24,15 @@ var DefaultHandlerConfig = HandlerConfig{
 		MaxDelay:    5 * time.Minute,
 		Multiplier:  2.0,
 	},
-	LeaseDuration: 10 * time.Minute,
-	Concurrency:   1,
+	CancellationRetryPolicy: ExponentialBackoffPolicy{
+		MaxAttempts: 5,
+		BaseDelay:   1 * time.Second,
+		MaxDelay:    10 * time.Minute,
+		Multiplier:  2.0,
+	},
+	LeaseDuration:           10 * time.Minute,
+	Concurrency:             1,
+	cancellationTaskHandler: nil, // Optional
 }
 
 // HandlerOption is a functional option for configuring handlers.
@@ -52,5 +66,31 @@ func WithConcurrency(n int) HandlerOption {
 		if n > 0 {
 			c.Concurrency = n
 		}
+	}
+}
+
+// WithCancellationHandler sets a cleanup handler for cancelled tasks.
+// The handler uses the same signature as OnceTaskHandler[TaskKind].
+// Cancelled tasks are always processed one at a time, even if the normal handler is a resource-key handler.
+// When a task is cancelled:
+//   - If handler is set: Handler is invoked to perform cleanup, retried per CancellationRetryPolicy.
+//   - If handler is nil: Task is immediately marked as done-cancelled without executing any handler.
+//
+// Example:
+//
+//	oncetask.WithCancellationHandler(func(ctx context.Context, task *oncetask.OnceTask[TaskKind]) (any, error) {
+//	    // Perform cleanup operations
+//	    return nil, nil
+//	})
+func WithCancellationHandler[TaskKind ~string](handler OnceTaskHandler[TaskKind]) HandlerOption {
+	return func(c *HandlerConfig) {
+		c.cancellationTaskHandler = handler
+	}
+}
+
+// WithCancellationRetryPolicy sets the retry policy for cancellation handlers.
+func WithCancellationRetryPolicy(policy RetryPolicy) HandlerOption {
+	return func(c *HandlerConfig) {
+		c.CancellationRetryPolicy = policy
 	}
 }

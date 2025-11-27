@@ -95,6 +95,86 @@ func TestGetStatus(t *testing.T) {
 			},
 			wantStatus: TaskStatusPending,
 		},
+		{
+			name: "cancellationPending when cancelled but not done",
+			task: OnceTask[string]{
+				IsCancelled: true,
+				CancelledAt: now.Add(-1 * time.Minute).Format(time.RFC3339),
+				DoneAt:      "",
+				WaitUntil:   epochTime,
+				LeasedUntil: "",
+				Attempts:    0,
+				Errors:      nil,
+			},
+			wantStatus: TaskStatusCancellationPending,
+		},
+		{
+			name: "cancelled when both cancelled and done",
+			task: OnceTask[string]{
+				IsCancelled: true,
+				CancelledAt: now.Add(-5 * time.Minute).Format(time.RFC3339),
+				DoneAt:      now.Add(-1 * time.Minute).Format(time.RFC3339),
+				Attempts:    1,
+				Errors:      nil,
+			},
+			wantStatus: TaskStatusCancelled,
+		},
+		{
+			name: "cancelled takes priority over completed",
+			task: OnceTask[string]{
+				IsCancelled: true,
+				CancelledAt: now.Add(-5 * time.Minute).Format(time.RFC3339),
+				DoneAt:      now.Add(-1 * time.Minute).Format(time.RFC3339),
+				Attempts:    2,
+				Errors:      []TaskError{{At: now.Format(time.RFC3339), Error: "first failure"}},
+			},
+			wantStatus: TaskStatusCancelled,
+		},
+		{
+			name: "cancelled takes priority over failed",
+			task: OnceTask[string]{
+				IsCancelled: true,
+				CancelledAt: now.Add(-5 * time.Minute).Format(time.RFC3339),
+				DoneAt:      now.Add(-1 * time.Minute).Format(time.RFC3339),
+				Attempts:    2,
+				Errors: []TaskError{
+					{At: now.Format(time.RFC3339), Error: "first failure"},
+					{At: now.Format(time.RFC3339), Error: "second failure"},
+				},
+			},
+			wantStatus: TaskStatusCancelled,
+		},
+		{
+			name: "cancellationPending when cancelled and leased",
+			task: OnceTask[string]{
+				IsCancelled: true,
+				CancelledAt: now.Add(-2 * time.Minute).Format(time.RFC3339),
+				DoneAt:      "",
+				WaitUntil:   epochTime,
+				LeasedUntil: now.Add(5 * time.Minute).Format(time.RFC3339),
+				Attempts:    0,
+				Errors:      nil,
+			},
+			wantStatus: TaskStatusCancellationPending,
+		},
+		{
+			name: "cancellationPending takes priority over waiting",
+			task: OnceTask[string]{
+				IsCancelled: true,
+				WaitUntil:   now.Add(1 * time.Hour).Format(time.RFC3339),
+				DoneAt:      "",
+			},
+			wantStatus: TaskStatusCancellationPending,
+		},
+		{
+			name: "cancellationPending takes priority over pending",
+			task: OnceTask[string]{
+				IsCancelled: true,
+				WaitUntil:   epochTime,
+				DoneAt:      "",
+			},
+			wantStatus: TaskStatusCancellationPending,
+		},
 	}
 
 	for _, tt := range tests {

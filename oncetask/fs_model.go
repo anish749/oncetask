@@ -78,6 +78,10 @@ type OnceTask[TaskKind ~string] struct {
 	Recurrence          *Recurrence `json:"recurrence" firestore:"recurrence"`                   // Recurrence config (nil = one-time or occurrence task)
 	ParentRecurrenceID  string      `json:"parentRecurrenceId" firestore:"parentRecurrenceId"`   // ID of parent recurrence task (empty = standalone or recurrence task)
 	OccurrenceTimestamp string      `json:"occurrenceTimestamp" firestore:"occurrenceTimestamp"` // Scheduled time of this occurrence (ISO 8601)
+
+	// Cancellation fields
+	IsCancelled bool   `json:"isCancelled" firestore:"isCancelled"` // Cancellation flag (false = not cancelled)
+	CancelledAt string `json:"cancelledAt" firestore:"cancelledAt"` // ISO 8601 timestamp when task was cancelled (audit trail)
 }
 
 // OnceTaskData defines the interface for task-specific data that can be stored in OnceTask.
@@ -193,5 +197,7 @@ func newOnceTask[TaskKind ~string](taskData OnceTaskData[TaskKind]) (*OnceTask[T
 		CreatedAt:   createdAt.UTC().Format(time.RFC3339),
 		DoneAt:      "",         // Initially empty, set when task is completed
 		Recurrence:  recurrence, // nil = one-time task, set from RecurrenceProvider
+		IsCancelled: false,
+		CancelledAt: "",
 	}, nil
 }

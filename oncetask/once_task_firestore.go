@@ -253,33 +253,49 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 			continue // Only had recurrence tasks, already processed
 		}
 
+		// Separate cancelled and normal tasks
+		var cancelledTasks []OnceTask[TaskKind]
+		var normalTasks []OnceTask[TaskKind]
+
+		for _, task := range executableTasks {
+			if task.IsCancelled {
+				cancelledTasks = append(cancelledTasks, task)
+			} else {
+				normalTasks = append(normalTasks, task)
+			}
+		}
+
+		// Process cancelled tasks individually with cancellation handler
+		if len(cancelledTasks) > 0 {
+			cancellationHandler := getCancellationHandler[TaskKind](config)
+			for _, task := range cancelledTasks {
+				ctx := withTaskContext(m.ctx, task.Id, task.ResourceKey)
+				result, execErr := cancellationHandler(ctx, &task)
+				if err := m.completeBatch(ctx, []OnceTask[TaskKind]{task}, execErr, result, config); err != nil {
+					slog.ErrorContext(ctx, "Failed to complete cancelled task", "error", err, "taskId", task.Id)
+				}
+			}
+		}
+
+		if len(normalTasks) == 0 {
+			continue
+		}
+
 		var execErr error
 		var result any
 
 		if hasTask {
-			if len(executableTasks) != 1 {
-				slog.ErrorContext(m.ctx, "Single task handler claimed multiple tasks", "taskType", taskType, "count", len(executableTasks))
-				execErr = fmt.Errorf("expected 1 task, got %d", len(executableTasks))
+			if len(normalTasks) != 1 {
+				slog.ErrorContext(m.ctx, "Single task handler claimed multiple tasks", "taskType", taskType, "count", len(normalTasks))
+				execErr = fmt.Errorf("expected 1 task, got %d", len(normalTasks))
 			} else {
-				ctx := withTaskContext(m.ctx, executableTasks[0].Id, executableTasks[0].ResourceKey)
-				result, execErr = taskHandler(ctx, &executableTasks[0])
+				result, execErr = taskHandler(withSingleTaskContext(m.ctx, normalTasks), &normalTasks[0])
 			}
 		} else if hasResource {
-			ctx := m.ctx
-			if len(executableTasks) == 1 {
-				ctx = withTaskContext(m.ctx, executableTasks[0].Id, executableTasks[0].ResourceKey)
-			} else if len(executableTasks) > 0 && executableTasks[0].ResourceKey != "" {
-				ctx = withTaskContext(m.ctx, "", executableTasks[0].ResourceKey)
-			}
-			result, execErr = resourceHandler(ctx, executableTasks)
+			result, execErr = resourceHandler(withResourceKeyTaskContext(m.ctx, normalTasks), normalTasks)
 		}
 
-		if execErr != nil {
-			slog.ErrorContext(m.ctx, "Task execution failed", "error", execErr, "taskType", taskType, "batchSize", len(executableTasks))
-		}
-
-		// 6. Complete executed tasks
-		if err := m.completeBatch(m.ctx, executableTasks, execErr, result, config); err != nil {
+		if err := m.completeBatch(m.ctx, normalTasks, execErr, result, config); err != nil {
 			slog.ErrorContext(m.ctx, "Failed to complete task batch", "error", err, "taskType", taskType)
 		}
 	}
@@ -442,7 +458,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) completeBatch(
 			if execErr == nil {
 				updates = processTaskSuccess(result, now)
 			} else {
-				updates = processTaskFailure(execErr, currentTask.Errors, currentTask.Attempts, config.RetryPolicy, now)
+				updates = processTaskFailure(execErr, config, currentTask, now)
 			}
 
 			if err := tx.Update(docRefs[i], updates); err != nil {

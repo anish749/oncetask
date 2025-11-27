@@ -42,10 +42,8 @@ func (q *firestoreQueryBuilder) readyTasks(taskType string, now time.Time) fires
 // Does NOT filter by leasedUntil - caller must check lease status in-memory.
 func (q *firestoreQueryBuilder) readyTasksForResourceKey(taskType, resourceKey string, now time.Time) firestore.Query {
 	nowStr := now.Format(time.RFC3339)
-	return q.base().
-		Where("type", "==", taskType).
-		Where("resourceKey", "==", resourceKey).
-		Where("doneAt", "==", "").
+	nonDoneTasks := q.nonDoneTasksByResourceKey(taskType, resourceKey)
+	return nonDoneTasks.
 		Where("waitUntil", "<=", nowStr).
 		OrderBy("waitUntil", firestore.Asc)
 }
@@ -54,16 +52,23 @@ func (q *firestoreQueryBuilder) readyTasksForResourceKey(taskType, resourceKey s
 // Used for mutual exclusion checks - ensures only one task per resource key runs at a time.
 func (q *firestoreQueryBuilder) activeLeasesForResourceKey(taskType, resourceKey string, now time.Time) firestore.Query {
 	nowStr := now.Format(time.RFC3339)
-	return q.base().
-		Where("type", "==", taskType).
-		Where("resourceKey", "==", resourceKey).
-		Where("doneAt", "==", "").
+	nonDoneTasks := q.nonDoneTasksByResourceKey(taskType, resourceKey)
+	return nonDoneTasks.
 		Where("leasedUntil", ">", nowStr)
 }
 
 // byResourceKey returns all tasks (any status) for a resource key.
 func (q *firestoreQueryBuilder) byResourceKey(resourceKey string) firestore.Query {
 	return q.base().Where("resourceKey", "==", resourceKey)
+}
+
+// nonDoneTasksByResourceKey returns all non-done tasks for a specific task type and resource key.
+// Base query for non-done tasks with a specific type and resource key.
+func (q *firestoreQueryBuilder) nonDoneTasksByResourceKey(taskType, resourceKey string) firestore.Query {
+	return q.base().
+		Where("type", "==", taskType).
+		Where("resourceKey", "==", resourceKey).
+		Where("doneAt", "==", "")
 }
 
 // doc returns a document reference for a task ID.

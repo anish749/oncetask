@@ -18,21 +18,27 @@ func processTaskSuccess(result any, now time.Time) []firestore.Update {
 
 // processTaskFailure generates updates for a failed task execution.
 // Either schedules a retry with backoff, or marks as permanently failed.
-func processTaskFailure(
+// Automatically selects the appropriate retry policy based on task.IsCancelled.
+func processTaskFailure[TaskKind ~string](
 	execErr error,
-	currentErrors []TaskError,
-	attempts int,
-	retryPolicy RetryPolicy,
+	config HandlerConfig,
+	task OnceTask[TaskKind],
 	now time.Time,
 ) []firestore.Update {
+	// Select the appropriate retry policy
+	retryPolicy := config.RetryPolicy
+	if task.IsCancelled {
+		retryPolicy = config.CancellationRetryPolicy
+	}
+
 	newError := TaskError{
 		At:    now.Format(time.RFC3339),
 		Error: execErr.Error(),
 	}
-	newErrors := append(currentErrors, newError)
+	newErrors := append(task.Errors, newError)
 
-	if retryPolicy.ShouldRetry(attempts) {
-		backoffDuration := retryPolicy.NextRetryDelay(attempts, execErr)
+	if retryPolicy.ShouldRetry(task.Attempts) {
+		backoffDuration := retryPolicy.NextRetryDelay(task.Attempts, execErr)
 		waitUntil := now.Add(backoffDuration).Format(time.RFC3339)
 
 		return []firestore.Update{

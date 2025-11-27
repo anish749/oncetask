@@ -14,6 +14,12 @@ import (
 
 // filterAndSpawnOccurrences handles recurrence tasks by spawning occurrences and rescheduling.
 // Returns the non-recurrence tasks that need handler execution.
+//
+// Recurrence task cancellation behavior:
+//   - If a recurrence task is cancelled (isCancelled=true), we stop spawning new occurrences
+//     and mark the recurrence task as done. This prevents future occurrences from being created.
+//   - Already-spawned occurrence tasks are independent and continue normally. They can be
+//     cancelled individually like any other task if needed.
 func (m *firestoreOnceTaskManager[TaskKind]) filterAndSpawnOccurrences(
 	ctx context.Context,
 	tasks []OnceTask[TaskKind],
@@ -27,6 +33,15 @@ func (m *firestoreOnceTaskManager[TaskKind]) filterAndSpawnOccurrences(
 			continue
 		}
 
+		// Check if recurrence task is cancelled
+		if task.IsCancelled {
+			// Stop spawning new occurrences - mark the recurrence task as done
+			if err := m.markRecurrenceTaskDone(ctx, task); err != nil {
+				slog.ErrorContext(ctx, "Failed to mark cancelled recurrence task as done", "error", err, "taskId", task.Id)
+			}
+			continue
+		}
+
 		// Recurrence task: spawn occurrence and reschedule
 		if err := m.spawnOccurrence(ctx, &task, now); err != nil {
 			slog.ErrorContext(ctx, "Failed to process recurrence task", "taskId", task.Id, "error", err)
@@ -34,6 +49,21 @@ func (m *firestoreOnceTaskManager[TaskKind]) filterAndSpawnOccurrences(
 	}
 
 	return executableTasks
+}
+
+// markRecurrenceTaskDone marks a recurrence task as done.
+// Used when a recurrence task is cancelled to prevent further occurrences from being spawned.
+func (m *firestoreOnceTaskManager[TaskKind]) markRecurrenceTaskDone(
+	ctx context.Context,
+	task OnceTask[TaskKind],
+) error {
+	docRef := m.queryBuilder.doc(task.Id)
+	now := time.Now().UTC()
+
+	updates := buildTaskDoneUpdates(now)
+
+	_, err := docRef.Update(ctx, updates)
+	return err
 }
 
 // spawnOccurrence creates an occurrence task and reschedules the recurrence task.
@@ -98,10 +128,7 @@ func prepareOccurrence[TaskKind ~string](
 	var parentUpdates []firestore.Update
 	if exhausted {
 		// No more occurrences - mark parent as done
-		parentUpdates = []firestore.Update{
-			{Path: "doneAt", Value: now.Format(time.RFC3339)},
-			{Path: "leasedUntil", Value: ""},
-		}
+		parentUpdates = buildTaskDoneUpdates(now)
 	} else {
 		// Schedule parent for next occurrence
 		parentUpdates = []firestore.Update{
@@ -114,6 +141,8 @@ func prepareOccurrence[TaskKind ~string](
 }
 
 // createOccurrenceTask creates a new occurrence task from a recurrence task.
+// Occurrence tasks are independent one-time tasks - they inherit the parent's data
+// but not its cancellation status. Each occurrence can be cancelled individually.
 func createOccurrenceTask[TaskKind ~string](parent *OnceTask[TaskKind], now time.Time) *OnceTask[TaskKind] {
 	occurrenceTimestamp := parent.WaitUntil
 	occurrenceID := fmt.Sprintf("%s_occ_%s", parent.Id, occurrenceTimestamp)
@@ -131,9 +160,20 @@ func createOccurrenceTask[TaskKind ~string](parent *OnceTask[TaskKind], now time
 		Attempts:            0,
 		Errors:              nil,
 		Result:              nil,
-		Recurrence:          nil,
-		ParentRecurrenceID:  parent.Id,
-		OccurrenceTimestamp: occurrenceTimestamp,
+		Recurrence:          nil,                 // Occurrence tasks are one-time tasks
+		ParentRecurrenceID:  parent.Id,           // Links back to generator
+		OccurrenceTimestamp: occurrenceTimestamp, // Scheduled time for this occurrence
+		IsCancelled:         false,               // Always starts as not cancelled
+		CancelledAt:         "",
+	}
+}
+
+// buildTaskDoneUpdates creates the Firestore updates to mark a task as done.
+// This is used for both exhausted recurrence tasks and cancelled recurrence tasks.
+func buildTaskDoneUpdates(now time.Time) []firestore.Update {
+	return []firestore.Update{
+		{Path: "doneAt", Value: now.Format(time.RFC3339)},
+		{Path: "leasedUntil", Value: ""},
 	}
 }
 

@@ -79,7 +79,13 @@ type OnceTaskManager[TaskKind ~string] interface {
 	// RegisterTaskHandler listens for new tasks and executes the handler function for each task.
 	// Handler returns (result, nil) on success or (nil, error) on failure.
 	// Use NoResult() adapter for handlers that don't produce a result.
-	// See HandlerOption and DefaultHandlerConfig for configuration options.
+	//
+	// Configuration options (see HandlerOption for details and examples):
+	//   - WithRetryPolicy: Configure retry behavior for task execution
+	//   - WithCancellationHandler: Register a cleanup handler for cancelled tasks (optional)
+	//   - WithCancellationRetryPolicy: Configure retry behavior for cancellation handlers
+	//   - WithLeaseDuration: Set how long a task is leased during execution
+	//   - WithConcurrency: Set number of concurrent workers
 	RegisterTaskHandler(taskType TaskKind, handler OnceTaskHandler[TaskKind], opts ...HandlerOption) error
 
 	// RegisterResourceKeyHandler listens for new tasks and executes the handler for all tasks with the same resource key.
@@ -90,7 +96,13 @@ type OnceTaskManager[TaskKind ~string] interface {
 	// Tasks without a resource key are processed individually.
 	// Handler returns (result, nil) on success or (nil, error) on failure.
 	// Use NoResultResourceKey() adapter for handlers that don't produce a result.
-	// See HandlerOption and DefaultHandlerConfig for configuration options.
+	//
+	// Configuration options (see HandlerOption for details and examples):
+	//   - WithRetryPolicy: Configure retry behavior for task execution
+	//   - WithCancellationHandler: Register a cleanup handler for cancelled tasks (optional)
+	//   - WithCancellationRetryPolicy: Configure retry behavior for cancellation handlers
+	//   - WithLeaseDuration: Set how long a task is leased during execution
+	//   - WithConcurrency: Set number of concurrent workers
 	RegisterResourceKeyHandler(taskType TaskKind, handler OnceTaskResourceKeyHandler[TaskKind], opts ...HandlerOption) error
 
 	// GetTasksByResourceKey retrieves all tasks with the given resource key.
@@ -103,4 +115,17 @@ type OnceTaskManager[TaskKind ~string] interface {
 	// Tasks not found are omitted from the result (no error).
 	// The tasks must belong to the current environment (from ONCE_TASK_ENV).
 	GetTasksByIds(ctx context.Context, ids []string) ([]OnceTask[TaskKind], error)
+
+	// CancelTask marks a single task as cancelled.
+	// Idempotent: no-op if task is already done or cancelled.
+	// Sets isCancelled=true, cancelledAt=now, waitUntil=epoch (immediate execution).
+	CancelTask(ctx context.Context, taskID string) error
+
+	// CancelTasksByResourceKey marks all non-done tasks with resourceKey as cancelled.
+	// Returns count of tasks cancelled.
+	CancelTasksByResourceKey(ctx context.Context, taskType TaskKind, resourceKey string) (int, error)
+
+	// CancelTasksByIds marks multiple tasks as cancelled (bulk operation via BulkWriter).
+	// Returns count of tasks cancelled. Partial failures return both count and aggregated error.
+	CancelTasksByIds(ctx context.Context, taskIDs []string) (int, error)
 }

@@ -24,6 +24,29 @@ func withTaskContext(ctx context.Context, taskID string, resourceKey string) con
 	return ctx
 }
 
+func withSingleTaskContext[TaskKind ~string](ctx context.Context, tasks []OnceTask[TaskKind]) context.Context {
+	if len(tasks) == 0 {
+		return ctx
+	}
+	taskID := tasks[0].Id
+	resourceKey := tasks[0].ResourceKey
+	return withTaskContext(ctx, taskID, resourceKey)
+}
+
+// withResourceKeyTaskContext is used for resource key batched tasks and adds only the resource key to the context for automatic logging
+// If there is only one task in the batch, the task ID is also added to the context.
+func withResourceKeyTaskContext[TaskKind ~string](ctx context.Context, tasks []OnceTask[TaskKind]) context.Context {
+	if len(tasks) == 0 {
+		return ctx
+	}
+	taskID := ""
+	if len(tasks) == 1 {
+		taskID = tasks[0].Id
+	}
+
+	return withTaskContext(ctx, taskID, tasks[0].ResourceKey)
+}
+
 // ContextHandler is a slog.Handler that automatically extracts the task ID and resource key from context
 // and adds them as attributes to all log records.
 //
