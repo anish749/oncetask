@@ -7,7 +7,7 @@ import (
 
 func TestGetCancellationHandler(t *testing.T) {
 	t.Run("returns no-op handler when not set", func(t *testing.T) {
-		config := HandlerConfig{
+		config := handlerConfig{
 			cancellationTaskHandler: nil,
 		}
 

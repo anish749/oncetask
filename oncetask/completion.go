@@ -21,7 +21,7 @@ func processTaskSuccess(result any, now time.Time) []firestore.Update {
 // Automatically selects the appropriate retry policy based on task.IsCancelled.
 func processTaskFailure[TaskKind ~string](
 	execErr error,
-	config HandlerConfig,
+	config handlerConfig,
 	task OnceTask[TaskKind],
 	now time.Time,
 ) []firestore.Update {

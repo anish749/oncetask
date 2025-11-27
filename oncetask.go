@@ -64,7 +64,6 @@ func NoResultResourceKey[TaskKind ~string](fn func(ctx context.Context, tasks []
 }
 
 // Configuration
-type HandlerConfig = oncetask.HandlerConfig
 type HandlerOption = oncetask.HandlerOption
 
 // Handler configuration options
@@ -72,10 +71,12 @@ var WithRetryPolicy = oncetask.WithRetryPolicy
 var WithNoRetry = oncetask.WithNoRetry
 var WithLeaseDuration = oncetask.WithLeaseDuration
 var WithConcurrency = oncetask.WithConcurrency
+
 // WithCancellationHandler registers a cleanup handler for cancelled tasks.
 func WithCancellationHandler[TaskKind ~string](handler OnceTaskHandler[TaskKind]) HandlerOption {
 	return oncetask.WithCancellationHandler(handler)
 }
+
 var WithCancellationRetryPolicy = oncetask.WithCancellationRetryPolicy
 
 // Retry policies

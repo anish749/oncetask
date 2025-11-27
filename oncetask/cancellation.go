@@ -144,7 +144,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) CancelTasksByIds(
 
 // getCancellationHandler returns the registered cancellation handler or a no-op handler.
 // Cancelled tasks are always processed one at a time, regardless of the normal handler type.
-func getCancellationHandler[TaskKind ~string](config HandlerConfig) OnceTaskHandler[TaskKind] {
+func getCancellationHandler[TaskKind ~string](config handlerConfig) OnceTaskHandler[TaskKind] {
 	if config.cancellationTaskHandler != nil {
 		if handler, ok := config.cancellationTaskHandler.(OnceTaskHandler[TaskKind]); ok {
 			return handler

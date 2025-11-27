@@ -26,7 +26,7 @@ type firestoreOnceTaskManager[TaskKind ~string] struct {
 	mu                  sync.RWMutex
 	taskHandlers        map[TaskKind]OnceTaskHandler[TaskKind]
 	resourceKeyHandlers map[TaskKind]OnceTaskResourceKeyHandler[TaskKind]
-	handlerConfigs      map[TaskKind]HandlerConfig
+	handlerConfigs      map[TaskKind]handlerConfig
 	evaluateChans       map[TaskKind]chan struct{} // Per task type channels for immediate evaluation
 
 	// Composed components
@@ -45,7 +45,7 @@ func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (On
 		ctx:                 ctx,
 		taskHandlers:        make(map[TaskKind]OnceTaskHandler[TaskKind]),
 		resourceKeyHandlers: make(map[TaskKind]OnceTaskResourceKeyHandler[TaskKind]),
-		handlerConfigs:      make(map[TaskKind]HandlerConfig),
+		handlerConfigs:      make(map[TaskKind]handlerConfig),
 		evaluateChans:       make(map[TaskKind]chan struct{}),
 
 		queryBuilder: queryBuilder,
@@ -111,7 +111,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterTaskHandler(
 	opts ...HandlerOption,
 ) error {
 	// Build config with defaults
-	config := DefaultHandlerConfig
+	config := defaultHandlerConfig
 	for _, opt := range opts {
 		opt(&config)
 	}
@@ -154,7 +154,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterResourceKeyHandler(
 	opts ...HandlerOption,
 ) error {
 	// Build config with defaults
-	config := DefaultHandlerConfig
+	config := defaultHandlerConfig
 	for _, opt := range opts {
 		opt(&config)
 	}
@@ -321,7 +321,7 @@ func leaseTask[TaskKind ~string](tx *firestore.Transaction, docRef *firestore.Do
 func (m *firestoreOnceTaskManager[TaskKind]) claimTasks(
 	ctx context.Context,
 	taskType TaskKind,
-	config HandlerConfig,
+	config handlerConfig,
 	hasResourceKeyHandler bool,
 ) ([]OnceTask[TaskKind], error) {
 	var tasks []OnceTask[TaskKind]
@@ -428,7 +428,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) completeBatch(
 	tasks []OnceTask[TaskKind],
 	execErr error,
 	result any,
-	config HandlerConfig,
+	config handlerConfig,
 ) error {
 	if len(tasks) == 0 {
 		return nil

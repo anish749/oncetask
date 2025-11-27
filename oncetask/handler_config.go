@@ -2,8 +2,8 @@ package oncetask
 
 import "time"
 
-// HandlerConfig holds configuration options for a task handler.
-type HandlerConfig struct {
+// handlerConfig holds configuration options for a task handler.
+type handlerConfig struct {
 	RetryPolicy             RetryPolicy   // Retry policy for normal task execution
 	CancellationRetryPolicy RetryPolicy   // Retry policy for cancellation handlers (separate)
 	LeaseDuration           time.Duration // Duration for which a task is leased during execution
@@ -16,8 +16,8 @@ type HandlerConfig struct {
 	cancellationTaskHandler any
 }
 
-// DefaultHandlerConfig provides sensible defaults for all handlers.
-var DefaultHandlerConfig = HandlerConfig{
+// defaultHandlerConfig provides sensible defaults for all handlers.
+var defaultHandlerConfig = handlerConfig{
 	RetryPolicy: ExponentialBackoffPolicy{
 		MaxAttempts: 3,
 		BaseDelay:   1 * time.Second,
@@ -36,25 +36,25 @@ var DefaultHandlerConfig = HandlerConfig{
 }
 
 // HandlerOption is a functional option for configuring handlers.
-type HandlerOption func(*HandlerConfig)
+type HandlerOption func(*handlerConfig)
 
 // WithRetryPolicy sets a custom retry policy for the handler.
 func WithRetryPolicy(policy RetryPolicy) HandlerOption {
-	return func(c *HandlerConfig) {
+	return func(c *handlerConfig) {
 		c.RetryPolicy = policy
 	}
 }
 
 // WithNoRetry disables retries - tasks fail permanently on first error.
 func WithNoRetry() HandlerOption {
-	return func(c *HandlerConfig) {
+	return func(c *handlerConfig) {
 		c.RetryPolicy = NoRetryPolicy{}
 	}
 }
 
 // WithLeaseDuration sets the lease duration for task execution.
 func WithLeaseDuration(d time.Duration) HandlerOption {
-	return func(c *HandlerConfig) {
+	return func(c *handlerConfig) {
 		c.LeaseDuration = d
 	}
 }
@@ -62,7 +62,7 @@ func WithLeaseDuration(d time.Duration) HandlerOption {
 // WithConcurrency sets the number of concurrent workers processing tasks.
 // Values less than 1 are ignored; default is 1 (serial execution).
 func WithConcurrency(n int) HandlerOption {
-	return func(c *HandlerConfig) {
+	return func(c *handlerConfig) {
 		if n > 0 {
 			c.Concurrency = n
 		}
@@ -83,14 +83,14 @@ func WithConcurrency(n int) HandlerOption {
 //	    return nil, nil
 //	})
 func WithCancellationHandler[TaskKind ~string](handler OnceTaskHandler[TaskKind]) HandlerOption {
-	return func(c *HandlerConfig) {
+	return func(c *handlerConfig) {
 		c.cancellationTaskHandler = handler
 	}
 }
 
 // WithCancellationRetryPolicy sets the retry policy for cancellation handlers.
 func WithCancellationRetryPolicy(policy RetryPolicy) HandlerOption {
-	return func(c *HandlerConfig) {
+	return func(c *handlerConfig) {
 		c.CancellationRetryPolicy = policy
 	}
 }
