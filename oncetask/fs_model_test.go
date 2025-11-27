@@ -39,10 +39,10 @@ type conflictingTask struct {
 	recurrence   Recurrence
 }
 
-func (t conflictingTask) GetType() string              { return "conflicting" }
-func (t conflictingTask) GenerateIdempotentID() string { return t.id }
-func (t conflictingTask) GetScheduledTime() time.Time  { return t.scheduledFor }
-func (t conflictingTask) GetRecurrence() *Recurrence   { return &t.recurrence }
+func (t *conflictingTask) GetType() string              { return "conflicting" }
+func (t *conflictingTask) GenerateIdempotentID() string { return t.id }
+func (t *conflictingTask) GetScheduledTime() time.Time  { return t.scheduledFor }
+func (t *conflictingTask) GetRecurrence() *Recurrence   { return &t.recurrence }
 
 type taskWithResourceKey struct {
 	id          string
@@ -56,13 +56,13 @@ func (t taskWithResourceKey) GetResourceKey() string       { return t.resourceKe
 // Test cases
 
 func TestNewOnceTask_WaitUntil(t *testing.T) {
-	epochTime := time.Time{}.Format(time.RFC3339)
+	epochTime := NoWait
 	scheduledTime := time.Date(2025, 6, 15, 14, 30, 0, 0, time.UTC)
 	dtstart := time.Date(2025, 1, 1, 9, 0, 0, 0, time.UTC)
 
 	tests := []struct {
 		name           string
-		task           OnceTaskData[string]
+		task           Data[string]
 		wantWaitUntil  string
 		wantRecurrence bool
 	}{
@@ -98,7 +98,7 @@ func TestNewOnceTask_WaitUntil(t *testing.T) {
 		},
 		{
 			name: "recurring task with zero scheduled time uses DTStart",
-			task: conflictingTask{
+			task: &conflictingTask{
 				id:           "task-5",
 				scheduledFor: time.Time{}, // Zero time - should be ignored
 				recurrence: Recurrence{
@@ -149,7 +149,7 @@ func TestNewOnceTask_RecurrenceErrors(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		task            OnceTaskData[string]
+		task            Data[string]
 		wantErrContains string
 	}{
 		{
@@ -198,7 +198,7 @@ func TestNewOnceTask_RecurrenceErrors(t *testing.T) {
 		},
 		{
 			name: "conflicting Recurrence and ScheduledTask",
-			task: conflictingTask{
+			task: &conflictingTask{
 				id:           "task-5",
 				scheduledFor: scheduledTime,
 				recurrence: Recurrence{

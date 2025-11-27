@@ -17,16 +17,16 @@ import (
 // ErrHandlerAlreadyExists is returned when trying to register a handler for a task type that already has a handler
 var ErrHandlerAlreadyExists = errors.New("handler for this task type already exists")
 
-// firestoreOnceTaskManager implements OnceTaskManager using Firestore
+// firestoreOnceTaskManager implements Manager using Firestore
 type firestoreOnceTaskManager[TaskKind ~string] struct {
 	client *firestore.Client
 	ctx    context.Context // background context in which the task handlers run, can be cancelled during shutdown
 
 	// Handler registration
 	mu                  sync.RWMutex
-	taskHandlers        map[TaskKind]OnceTaskHandler[TaskKind]
-	resourceKeyHandlers map[TaskKind]OnceTaskResourceKeyHandler[TaskKind]
-	handlerConfigs      map[TaskKind]HandlerConfig
+	taskHandlers        map[TaskKind]Handler[TaskKind]
+	resourceKeyHandlers map[TaskKind]ResourceKeyHandler[TaskKind]
+	handlerConfigs      map[TaskKind]handlerConfig
 	evaluateChans       map[TaskKind]chan struct{} // Per task type channels for immediate evaluation
 
 	// Composed components
@@ -35,7 +35,7 @@ type firestoreOnceTaskManager[TaskKind ~string] struct {
 
 // NewFirestoreOnceTaskManager creates a new firestore once task manager.
 // Returns the repository and a cancel function that cancels all running goroutines.
-func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (OnceTaskManager[TaskKind], func()) {
+func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (Manager[TaskKind], func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	queryBuilder := newFirestoreQueryBuilder(client.Collection(CollectionOnceTasks), getTaskEnv())
@@ -43,9 +43,9 @@ func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (On
 	m := &firestoreOnceTaskManager[TaskKind]{
 		client:              client,
 		ctx:                 ctx,
-		taskHandlers:        make(map[TaskKind]OnceTaskHandler[TaskKind]),
-		resourceKeyHandlers: make(map[TaskKind]OnceTaskResourceKeyHandler[TaskKind]),
-		handlerConfigs:      make(map[TaskKind]HandlerConfig),
+		taskHandlers:        make(map[TaskKind]Handler[TaskKind]),
+		resourceKeyHandlers: make(map[TaskKind]ResourceKeyHandler[TaskKind]),
+		handlerConfigs:      make(map[TaskKind]handlerConfig),
 		evaluateChans:       make(map[TaskKind]chan struct{}),
 
 		queryBuilder: queryBuilder,
@@ -56,7 +56,7 @@ func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (On
 // CreateTask creates a once task to Firestore.
 // The task parameter should be created using fs_models/once.NewOnceTask().
 // If a task with the same ID already exists, logs and returns nil (idempotent).
-func (m *firestoreOnceTaskManager[TaskKind]) CreateTask(ctx context.Context, taskData OnceTaskData[TaskKind]) (bool, error) {
+func (m *firestoreOnceTaskManager[TaskKind]) CreateTask(ctx context.Context, taskData Data[TaskKind]) (bool, error) {
 	task, err := newOnceTask(taskData)
 	if err != nil {
 		return false, fmt.Errorf("failed to create once task: %w", err)
@@ -107,11 +107,11 @@ func (m *firestoreOnceTaskManager[TaskKind]) evaluateNow(taskType TaskKind) {
 // Returns ErrHandlerAlreadyExists if a handler for this task type is already registered.
 func (m *firestoreOnceTaskManager[TaskKind]) RegisterTaskHandler(
 	taskType TaskKind,
-	handler OnceTaskHandler[TaskKind],
+	handler Handler[TaskKind],
 	opts ...HandlerOption,
 ) error {
 	// Build config with defaults
-	config := DefaultHandlerConfig
+	config := defaultHandlerConfig
 	for _, opt := range opts {
 		opt(&config)
 	}
@@ -150,11 +150,11 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterTaskHandler(
 // Returns ErrHandlerAlreadyExists if a handler for this task type is already registered.
 func (m *firestoreOnceTaskManager[TaskKind]) RegisterResourceKeyHandler(
 	taskType TaskKind,
-	handler OnceTaskResourceKeyHandler[TaskKind],
+	handler ResourceKeyHandler[TaskKind],
 	opts ...HandlerOption,
 ) error {
 	// Build config with defaults
-	config := DefaultHandlerConfig
+	config := defaultHandlerConfig
 	for _, opt := range opts {
 		opt(&config)
 	}
@@ -321,7 +321,7 @@ func leaseTask[TaskKind ~string](tx *firestore.Transaction, docRef *firestore.Do
 func (m *firestoreOnceTaskManager[TaskKind]) claimTasks(
 	ctx context.Context,
 	taskType TaskKind,
-	config HandlerConfig,
+	config handlerConfig,
 	hasResourceKeyHandler bool,
 ) ([]OnceTask[TaskKind], error) {
 	var tasks []OnceTask[TaskKind]
@@ -335,7 +335,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) claimTasks(
 		// 1. Find and lock a candidate task
 		candidateQuery := m.queryBuilder.readyTasks(string(taskType), now).Limit(1)
 
-		candidateSnaps, err := queryAndLock(tx, candidateQuery)
+		candidateSnaps, err := queryAndLock(tx, &candidateQuery)
 		if err != nil {
 			return fmt.Errorf("failed to query candidate task: %w", err)
 		}
@@ -362,7 +362,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) claimTasks(
 			// Fetch and lock ALL ready tasks for this resource key
 			batchQuery := m.queryBuilder.readyTasksForResourceKey(string(taskType), candidate.ResourceKey, now)
 
-			docSnaps, err := queryAndLock(tx, batchQuery)
+			docSnaps, err := queryAndLock(tx, &batchQuery)
 			if err != nil {
 				return fmt.Errorf("failed to fetch resource key tasks: %w", err)
 			}
@@ -428,7 +428,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) completeBatch(
 	tasks []OnceTask[TaskKind],
 	execErr error,
 	result any,
-	config HandlerConfig,
+	config handlerConfig,
 ) error {
 	if len(tasks) == 0 {
 		return nil
@@ -554,7 +554,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) GetTasksByIds(ctx context.Context, 
 //   - (created count, error) if at least one task failed for a reason other than already-existing
 //
 // The returned error aggregates all non-AlreadyExists failures using errors.Join.
-func (m *firestoreOnceTaskManager[TaskKind]) CreateTasks(ctx context.Context, taskDataList []OnceTaskData[TaskKind]) (int, error) {
+func (m *firestoreOnceTaskManager[TaskKind]) CreateTasks(ctx context.Context, taskDataList []Data[TaskKind]) (int, error) {
 	if len(taskDataList) == 0 {
 		return 0, nil
 	}

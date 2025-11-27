@@ -17,7 +17,7 @@ var errLeaseNotAvailable = errors.New("lease not available for task")
 // Firestore will detect the conflict at commit time.
 //
 // Returns the document snapshots for further processing. Use docSnap.Ref to get the document reference.
-func queryAndLock(tx *firestore.Transaction, query firestore.Query) ([]*firestore.DocumentSnapshot, error) {
+func queryAndLock(tx *firestore.Transaction, query *firestore.Query) ([]*firestore.DocumentSnapshot, error) {
 	// First, run the query to find matching document IDs.
 	// We only need the document refs here since we'll read the full docs during locking.
 	docs, err := tx.Documents(query.Select()).GetAll()

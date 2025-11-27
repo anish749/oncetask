@@ -34,7 +34,7 @@ When a task is cancelled:
 
 1. **Task is marked for cancellation:**
    - `isCancelled` flag is set to `true`
-   - `waitUntil` is set to epoch (immediate execution)
+   - `waitUntil` is set to `NoWait` (immediate execution)
 
 2. **Cancellation handler runs (if registered):**
    - If a cancellation handler is configured, it executes with the cancellation retry policy
@@ -72,6 +72,7 @@ manager.RegisterTaskHandler(
 ### When to Use Cancellation Handlers
 
 Use cancellation handlers when:
+
 - Tasks acquire resources that need cleanup (files, connections, locks)
 - Tasks create side effects that should be rolled back
 - External systems need to be notified of cancellation
@@ -178,11 +179,13 @@ manager.CancelTask(ctx, recurrenceTaskID)
 ```
 
 **Result:**
+
 - The recurrence task is marked as done
 - No new occurrence tasks are spawned
 - Already-spawned occurrence tasks continue running normally
 
 **To cancel everything:**
+
 ```go
 // 1. Cancel the recurrence task
 manager.CancelTask(ctx, recurrenceTaskID)
@@ -272,6 +275,7 @@ oncetask.WithCancellationHandler(func(ctx context.Context, task *oncetask.OnceTa
 ### 5. Avoid Long-Running Cleanup
 
 Keep cancellation handlers fast:
+
 - Delegate heavy cleanup to separate tasks if needed
 - Use timeouts to prevent hanging
 - Mark resources for async cleanup if necessary
@@ -338,6 +342,7 @@ manager.CancelTask(ctx, jobTaskID)
 ## Monitoring Cancellation
 
 Track cancellation metrics:
+
 - Number of tasks cancelled
 - Cancellation handler success rate
 - Cleanup failure reasons

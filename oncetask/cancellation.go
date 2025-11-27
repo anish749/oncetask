@@ -12,17 +12,17 @@ import (
 
 // CancelTask marks a single task as cancelled.
 // Idempotent: no-op if task is already done or cancelled.
-// Sets isCancelled=true, cancelledAt=now, and waitUntil=epoch for immediate processing.
+// Sets isCancelled=true, cancelledAt=now, and waitUntil=NoWait for immediate processing.
 //
 // Cancellation behavior:
-// - Sets waitUntil to epoch (immediate) to ensure the cancellation handler runs as soon as possible.
+// - Sets waitUntil to NoWait (immediate) to ensure the cancellation handler runs as soon as possible.
 // - This prevents the task from being executed later if it was scheduled for the future.
 //
 // Note on race conditions with leased tasks:
-//   - If the task is currently leased (running), setting isCancelled=true and waitUntil=epoch is still correct.
+//   - If the task is currently leased (running), setting isCancelled=true and waitUntil=NoWait is still correct.
 //   - The currently running handler may complete successfully after we mark it cancelled - that's acceptable.
 //   - However, if the lease expires without completion, we don't want the task to be retried later.
-//   - By setting waitUntil=epoch, we ensure that once the lease expires, the task is immediately picked up
+//   - By setting waitUntil=NoWait, we ensure that once the lease expires, the task is immediately picked up
 //     and either the cancellation handler runs, or it's marked as done-cancelled.
 func (m *firestoreOnceTaskManager[TaskKind]) CancelTask(
 	ctx context.Context,
@@ -110,7 +110,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) CancelTasksByIds(
 		updates := []firestore.Update{
 			{Path: "isCancelled", Value: true},
 			{Path: "cancelledAt", Value: now.Format(time.RFC3339)},
-			{Path: "waitUntil", Value: time.Time{}.Format(time.RFC3339)}, // Epoch = immediate execution
+			{Path: "waitUntil", Value: NoWait},
 		}
 
 		job, err := bw.Update(docSnap.Ref, updates)
@@ -144,9 +144,9 @@ func (m *firestoreOnceTaskManager[TaskKind]) CancelTasksByIds(
 
 // getCancellationHandler returns the registered cancellation handler or a no-op handler.
 // Cancelled tasks are always processed one at a time, regardless of the normal handler type.
-func getCancellationHandler[TaskKind ~string](config HandlerConfig) OnceTaskHandler[TaskKind] {
+func getCancellationHandler[TaskKind ~string](config handlerConfig) Handler[TaskKind] {
 	if config.cancellationTaskHandler != nil {
-		if handler, ok := config.cancellationTaskHandler.(OnceTaskHandler[TaskKind]); ok {
+		if handler, ok := config.cancellationTaskHandler.(Handler[TaskKind]); ok {
 			return handler
 		}
 	}

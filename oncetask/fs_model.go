@@ -11,6 +11,9 @@ const (
 	CollectionOnceTasks string = "onceTasks"
 	EnvVariable         string = "ONCE_TASK_ENV"
 	DefaultEnv          string = "DEFAULT"
+	// NoWait is the zero value for waitUntil, representing immediate execution (epoch time).
+	// Use this constant instead of calling time.Time{}.Format(time.RFC3339) everywhere.
+	NoWait string = "0001-01-01T00:00:00Z"
 )
 
 // TaskError represents a single failed execution attempt.
@@ -84,9 +87,9 @@ type OnceTask[TaskKind ~string] struct {
 	CancelledAt string `json:"cancelledAt" firestore:"cancelledAt"` // ISO 8601 timestamp when task was cancelled (audit trail)
 }
 
-// OnceTaskData defines the interface for task-specific data that can be stored in OnceTask.
+// Data defines the interface for task-specific data that can be stored in OnceTask.
 // Each implementation represents a specific type of once-execution task with its own data structure.
-type OnceTaskData[TaskKind comparable] interface {
+type Data[TaskKind comparable] interface {
 	GetType() TaskKind
 
 	// Generate a deterministic, idempotent ID based on the task's natural key.
@@ -95,7 +98,7 @@ type OnceTaskData[TaskKind comparable] interface {
 	GenerateIdempotentID() string
 }
 
-// ResourceKeyProvider is an optional interface that OnceTaskData implementations can implement
+// ResourceKeyProvider is an optional interface that Data implementations can implement
 // to enable resource-level serialization. When GetResourceKey() returns a non-empty string,
 // lease acquisition will check for active leases on other tasks with the same ResourceKey,
 // ensuring only one task executes at a time per resource (e.g., per calendarId or conversationId).
@@ -105,22 +108,22 @@ type ResourceKeyProvider interface {
 	GetResourceKey() string
 }
 
-// ScheduledTask is an optional interface that OnceTaskData implementations can implement
+// ScheduledTask is an optional interface that Data implementations can implement
 // to specify a scheduled time for the task. When GetScheduledTime() returns a non-empty time,
 // the task will not be executed until the specified time.
 type ScheduledTask interface {
 	GetScheduledTime() time.Time
 }
 
-// RecurrenceProvider is an optional interface that OnceTaskData implementations can implement
+// RecurrenceProvider is an optional interface that Data implementations can implement
 // to define recurring task schedules. When implemented, the task becomes a generator that
 // spawns occurrence tasks according to the RRULE.
 type RecurrenceProvider interface {
 	GetRecurrence() *Recurrence
 }
 
-// This allows for reading the data field into a specific type.
-func (t *OnceTask[TaskKind]) ReadInto(v OnceTaskData[TaskKind]) error {
+// ReadInto allows for reading the data field into a specific type.
+func (t *OnceTask[TaskKind]) ReadInto(v Data[TaskKind]) error {
 	if t.Type != v.GetType() {
 		return fmt.Errorf("expected task type %s, got %s", v.GetType(), t.Type)
 	}
@@ -131,8 +134,8 @@ func (t *OnceTask[TaskKind]) ReadInto(v OnceTaskData[TaskKind]) error {
 	return json.Unmarshal(jsonBytes, v)
 }
 
-// Use CreateTask() on the OnceTaskManager to create a new OnceTask.
-func newOnceTask[TaskKind ~string](taskData OnceTaskData[TaskKind]) (*OnceTask[TaskKind], error) {
+// Use CreateTask() on the Manager to create a new OnceTask.
+func newOnceTask[TaskKind ~string](taskData Data[TaskKind]) (*OnceTask[TaskKind], error) {
 	taskID := taskData.GenerateIdempotentID()
 	createdAt := time.Now()
 	data, err := json.Marshal(taskData)
@@ -182,8 +185,8 @@ func newOnceTask[TaskKind ~string](taskData OnceTaskData[TaskKind]) (*OnceTask[T
 		// One-time scheduled task: use ScheduledTask.GetScheduledTime()
 		waitUntil = scheduledTime.UTC().Format(time.RFC3339)
 	} else {
-		// Immediate execution: epoch time
-		waitUntil = time.Time{}.Format(time.RFC3339) // Epoch: 0001-01-01T00:00:00Z
+		// Immediate execution: use NoWait
+		waitUntil = NoWait
 	}
 
 	return &OnceTask[TaskKind]{
@@ -192,7 +195,7 @@ func newOnceTask[TaskKind ~string](taskData OnceTaskData[TaskKind]) (*OnceTask[T
 		Data:        dataMap,
 		ResourceKey: resourceKey,
 		Env:         getTaskEnv(),
-		WaitUntil:   waitUntil, // Derived from Recurrence.DTStart, ScheduledTime, or epoch
+		WaitUntil:   waitUntil, // Derived from Recurrence.DTStart, ScheduledTime, or NoWait
 		LeasedUntil: "",        // Initially empty, set when task is leased to an executor.
 		CreatedAt:   createdAt.UTC().Format(time.RFC3339),
 		DoneAt:      "",         // Initially empty, set when task is completed

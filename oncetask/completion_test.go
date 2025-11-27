@@ -24,7 +24,7 @@ func TestProcessTaskFailure_RetryPolicySelection(t *testing.T) {
 		Multiplier:  2.0,
 	}
 
-	config := HandlerConfig{
+	config := handlerConfig{
 		RetryPolicy:             normalRetryPolicy,
 		CancellationRetryPolicy: cancellationRetryPolicy,
 	}
@@ -98,7 +98,7 @@ func TestProcessTaskFailure_CancellationRetryExhaustion(t *testing.T) {
 	now := time.Now()
 	execErr := fmt.Errorf("cancellation handler failed")
 
-	config := HandlerConfig{
+	config := handlerConfig{
 		CancellationRetryPolicy: ExponentialBackoffPolicy{
 			MaxAttempts: 3,
 			BaseDelay:   1 * time.Second,
