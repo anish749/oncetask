@@ -50,8 +50,7 @@ func getTaskEnv() string {
 	return env
 }
 
-// Once Queue is a set of tools and utilities
-// used to execute something only once, asynchronously.
+// OnceTask represents a task to be executed exactly once, asynchronously.
 type OnceTask[TaskKind ~string] struct {
 	Id   string                 `json:"id" firestore:"id"` // Also the idempotency key.
 	Type TaskKind               `json:"type" firestore:"type"`

@@ -14,7 +14,7 @@ const (
 )
 
 // withTaskContext adds both task ID and resource key to the context for automatic logging
-func withTaskContext(ctx context.Context, taskID string, resourceKey string) context.Context {
+func withTaskContext(ctx context.Context, taskID, resourceKey string) context.Context {
 	if taskID != "" {
 		ctx = context.WithValue(ctx, taskIDContextKey, taskID)
 	}
