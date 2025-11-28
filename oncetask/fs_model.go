@@ -173,7 +173,8 @@ func newOnceTask[TaskKind ~string](taskData Data[TaskKind]) (*OnceTask[TaskKind]
 
 	// Calculate WaitUntil based on task type
 	var waitUntil string
-	if recurrence != nil {
+	switch {
+	case recurrence != nil:
 		// Recurring task: calculate first occurrence from DTStart
 		firstOccurrence, err := calculateFirstOccurrence(recurrence)
 		if err != nil {
@@ -181,10 +182,10 @@ func newOnceTask[TaskKind ~string](taskData Data[TaskKind]) (*OnceTask[TaskKind]
 		}
 
 		waitUntil = firstOccurrence.UTC().Format(time.RFC3339)
-	} else if !scheduledTime.IsZero() {
+	case !scheduledTime.IsZero():
 		// One-time scheduled task: use ScheduledTask.GetScheduledTime()
 		waitUntil = scheduledTime.UTC().Format(time.RFC3339)
-	} else {
+	default:
 		// Immediate execution: use NoWait
 		waitUntil = NoWait
 	}

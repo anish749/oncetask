@@ -62,28 +62,29 @@ func TestProcessTaskFailure_RetryPolicySelection(t *testing.T) {
 			// Verify that retry was scheduled (not permanently failed)
 			var foundWaitUntil bool
 			for _, update := range updates {
-				if update.Path == "waitUntil" {
-					foundWaitUntil = true
+				if update.Path != "waitUntil" {
+					continue
+				}
+				foundWaitUntil = true
 
-					// Parse waitUntil timestamp
-					waitUntilStr, ok := update.Value.(string)
-					if !ok {
-						t.Fatalf("waitUntil value is not string: %T", update.Value)
-					}
-					waitUntil, err := time.Parse(time.RFC3339, waitUntilStr)
-					if err != nil {
-						t.Fatalf("failed to parse waitUntil: %v", err)
-					}
+				// Parse waitUntil timestamp
+				waitUntilStr, ok := update.Value.(string)
+				if !ok {
+					t.Fatalf("waitUntil value is not string: %T", update.Value)
+				}
+				waitUntil, err := time.Parse(time.RFC3339, waitUntilStr)
+				if err != nil {
+					t.Fatalf("failed to parse waitUntil: %v", err)
+				}
 
-					// Calculate expected backoff
-					expectedDelay := tt.wantRetryPolicy.NextRetryDelay(tt.task.Attempts, execErr)
-					expectedWaitUntil := now.Add(expectedDelay)
+				// Calculate expected backoff
+				expectedDelay := tt.wantRetryPolicy.NextRetryDelay(tt.task.Attempts, execErr)
+				expectedWaitUntil := now.Add(expectedDelay)
 
-					// Allow 1 second tolerance for timing differences
-					diff := waitUntil.Sub(expectedWaitUntil)
-					if diff < -time.Second || diff > time.Second {
-						t.Errorf("waitUntil = %v, want ~%v (diff: %v)", waitUntil, expectedWaitUntil, diff)
-					}
+				// Allow 1 second tolerance for timing differences
+				diff := waitUntil.Sub(expectedWaitUntil)
+				if diff < -time.Second || diff > time.Second {
+					t.Errorf("waitUntil = %v, want ~%v (diff: %v)", waitUntil, expectedWaitUntil, diff)
 				}
 			}
 
