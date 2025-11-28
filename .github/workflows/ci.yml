@@ -43,24 +43,24 @@ jobs:
         flags: unittests
         fail_ci_if_error: false
 
-  # lint:
-  #   name: Lint
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #   - name: Checkout code
-  #     uses: actions/checkout@v4
-  #
-  #   - name: Set up Go
-  #     uses: actions/setup-go@v5
-  #     with:
-  #       go-version: '1.24.x'
-  #       cache: true
-  #
-  #   - name: golangci-lint
-  #     uses: golangci/golangci-lint-action@v6
-  #     with:
-  #       version: latest
-  #       args: --timeout=5m
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24.x'
+        cache: true
+
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v6
+      with:
+        version: latest
+        args: --timeout=5m
 
   build:
     name: Build
