@@ -50,11 +50,19 @@ import (
 // OnceTask represents a task to be executed exactly once using a lease-based mechanism.
 // The task will be retried on failure according to the configured retry policy until it succeeds.
 type OnceTask[TaskKind ~string] = oncetask.OnceTask[TaskKind]
+
+// Data defines the interface for task-specific data that can be stored in OnceTask.
 type Data[TaskKind comparable] = oncetask.Data[TaskKind]
+
+// Manager manages the lifecycle of once-execution tasks backed by Firestore.
 type Manager[TaskKind ~string] = oncetask.Manager[TaskKind]
 
 // Handler types and adapters
+
+// Handler is a function that processes a single task.
 type Handler[TaskKind ~string] = oncetask.Handler[TaskKind]
+
+// ResourceKeyHandler is a function that processes multiple tasks with the same resource key.
 type ResourceKeyHandler[TaskKind ~string] = oncetask.ResourceKeyHandler[TaskKind]
 
 // NoResult adapts a single-task handler that doesn't return a result.
@@ -72,8 +80,14 @@ type HandlerOption = oncetask.HandlerOption
 
 // WithRetryPolicy sets the retry policy for a task handler.
 var WithRetryPolicy = oncetask.WithRetryPolicy
+
+// WithNoRetry disables retry for a task handler.
 var WithNoRetry = oncetask.WithNoRetry
+
+// WithLeaseDuration sets the lease duration for a task handler.
 var WithLeaseDuration = oncetask.WithLeaseDuration
+
+// WithConcurrency sets the concurrency level for a task handler.
 var WithConcurrency = oncetask.WithConcurrency
 
 // WithCancellationHandler registers a cleanup handler for cancelled tasks.
@@ -81,17 +95,28 @@ func WithCancellationHandler[TaskKind ~string](handler Handler[TaskKind]) Handle
 	return oncetask.WithCancellationHandler(handler)
 }
 
+// WithCancellationRetryPolicy sets the retry policy for cancellation handlers.
 var WithCancellationRetryPolicy = oncetask.WithCancellationRetryPolicy
 
 // RetryPolicy defines the retry behavior for failed tasks.
 type RetryPolicy = oncetask.RetryPolicy
+
+// ExponentialBackoffPolicy retries with exponential backoff delays.
 type ExponentialBackoffPolicy = oncetask.ExponentialBackoffPolicy
+
+// FixedDelayPolicy retries with a constant delay between attempts.
 type FixedDelayPolicy = oncetask.FixedDelayPolicy
+
+// NoRetryPolicy never retries - tasks fail permanently on first error.
 type NoRetryPolicy = oncetask.NoRetryPolicy
 
 // TaskError represents an error that occurred during task execution.
 type TaskError = oncetask.TaskError
+
+// Recurrence defines a recurring task schedule using RFC 5545 RRULE.
 type Recurrence = oncetask.Recurrence
+
+// TaskStatus represents the current state of a task.
 type TaskStatus = oncetask.TaskStatus
 
 // TaskStatus constants
@@ -107,15 +132,20 @@ const (
 
 // ResourceKeyProvider is an interface for types that can provide a resource key.
 type ResourceKeyProvider = oncetask.ResourceKeyProvider
+
+// ScheduledTask is an interface for tasks that can specify a scheduled execution time.
 type ScheduledTask = oncetask.ScheduledTask
+
+// RecurrenceProvider is an interface for tasks that can define recurring schedules.
 type RecurrenceProvider = oncetask.RecurrenceProvider
 
 // NewFirestoreOnceTaskManager creates a new Firestore-backed task manager.
-func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (Manager[TaskKind], func()) {
+func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (manager Manager[TaskKind], cleanup func()) {
 	return oncetask.NewFirestoreOnceTaskManager[TaskKind](client)
 }
 
 // ContextHandler is a slog.Handler that automatically adds task context to logs.
 type ContextHandler = oncetask.ContextHandler
 
+// NewContextHandler creates a new ContextHandler that wraps the provided handler.
 var NewContextHandler = oncetask.NewContextHandler

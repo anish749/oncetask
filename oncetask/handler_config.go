@@ -4,16 +4,15 @@ import "time"
 
 // handlerConfig holds configuration options for a task handler.
 type handlerConfig struct {
-	RetryPolicy             RetryPolicy   // Retry policy for normal task execution
-	CancellationRetryPolicy RetryPolicy   // Retry policy for cancellation handlers (separate)
-	LeaseDuration           time.Duration // Duration for which a task is leased during execution
-	Concurrency             int           // Number of concurrent workers processing tasks
-
 	// cancellationTaskHandler is an optional cleanup handler for cancelled tasks.
 	// Type: Handler[TaskKind].
 	// Always processes tasks one at a time, regardless of whether the normal handler is single-task or resource-key.
 	// Use WithCancellationHandler() to set this field - it should not be set directly.
 	cancellationTaskHandler any
+	RetryPolicy             RetryPolicy   // Retry policy for normal task execution
+	CancellationRetryPolicy RetryPolicy   // Retry policy for cancellation handlers (separate)
+	LeaseDuration           time.Duration // Duration for which a task is leased during execution
+	Concurrency             int           // Number of concurrent workers processing tasks
 }
 
 // defaultHandlerConfig provides sensible defaults for all handlers.

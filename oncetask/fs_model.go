@@ -8,9 +8,12 @@ import (
 )
 
 const (
+	// CollectionOnceTasks is the Firestore collection name for storing once tasks.
 	CollectionOnceTasks string = "onceTasks"
-	EnvVariable         string = "ONCE_TASK_ENV"
-	DefaultEnv          string = "DEFAULT"
+	// EnvVariable is the environment variable name for task environment separation.
+	EnvVariable string = "ONCE_TASK_ENV"
+	// DefaultEnv is the default environment name when EnvVariable is not set.
+	DefaultEnv string = "DEFAULT"
 	// NoWait is the zero value for waitUntil, representing immediate execution (epoch time).
 	// Use this constant instead of calling time.Time{}.Format(time.RFC3339) everywhere.
 	NoWait string = "0001-01-01T00:00:00Z"
@@ -51,6 +54,8 @@ func getTaskEnv() string {
 }
 
 // OnceTask represents a task to be executed exactly once, asynchronously.
+//
+//nolint:govet // fieldalignment: struct field order prioritizes logical grouping over memory optimization
 type OnceTask[TaskKind ~string] struct {
 	Id   string                 `json:"id" firestore:"id"` // Also the idempotency key.
 	Type TaskKind               `json:"type" firestore:"type"`

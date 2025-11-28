@@ -11,11 +11,11 @@ func TestFindOccurrence(t *testing.T) {
 	jan10 := time.Date(2025, 1, 10, 9, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name          string
-		recurrence    *Recurrence
 		referenceTime time.Time
-		inclusive     bool
 		wantTime      time.Time
+		recurrence    *Recurrence
+		name          string
+		inclusive     bool
 		wantExhausted bool
 		wantErr       bool
 	}{
@@ -139,10 +139,10 @@ func TestCalculateNextOccurrence(t *testing.T) {
 	jan6 := time.Date(2025, 1, 6, 9, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name          string
-		recurrence    *Recurrence
 		after         time.Time
 		wantTime      time.Time
+		recurrence    *Recurrence
+		name          string
 		wantExhausted bool
 	}{
 		{

@@ -18,6 +18,8 @@ import (
 var ErrHandlerAlreadyExists = errors.New("handler for this task type already exists")
 
 // firestoreOnceTaskManager implements Manager using Firestore
+//
+//nolint:govet // fieldalignment: struct field order prioritizes logical grouping over memory optimization
 type firestoreOnceTaskManager[TaskKind ~string] struct {
 	client *firestore.Client
 	ctx    context.Context // background context in which the task handlers run, can be cancelled during shutdown

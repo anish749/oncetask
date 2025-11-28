@@ -11,8 +11,8 @@ func TestGetStatus(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		task       OnceTask[string]
 		wantStatus TaskStatus
+		task       OnceTask[string]
 	}{
 		{
 			name: "completed when done with more attempts than errors",
@@ -236,8 +236,8 @@ func TestGetStatus_Priority(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		task       OnceTask[string]
 		wantStatus TaskStatus
+		task       OnceTask[string]
 	}{
 		{
 			name: "doneAt takes priority over leasedUntil and waitUntil",

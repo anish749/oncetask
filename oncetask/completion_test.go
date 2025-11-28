@@ -31,8 +31,8 @@ func TestProcessTaskFailure_RetryPolicySelection(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		task            OnceTask[string]
 		wantRetryPolicy RetryPolicy
+		task            OnceTask[string]
 	}{
 		{
 			name: "uses normal retry policy for non-cancelled task",

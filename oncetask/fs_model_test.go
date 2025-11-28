@@ -16,8 +16,8 @@ func (t immediateTask) GetType() string              { return "immediate" }
 func (t immediateTask) GenerateIdempotentID() string { return t.id }
 
 type scheduledTask struct {
-	id           string
 	scheduledFor time.Time
+	id           string
 }
 
 func (t scheduledTask) GetType() string              { return "scheduled" }
