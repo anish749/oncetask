@@ -36,13 +36,15 @@ type firestoreOnceTaskManager[TaskKind ~string] struct {
 }
 
 // NewFirestoreOnceTaskManager creates a new firestore once task manager.
-// Returns the repository and a cancel function that cancels all running goroutines.
-func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (Manager[TaskKind], func()) {
-	ctx, cancel := context.WithCancel(context.Background())
+// The provided context is used as the parent for all background task processing goroutines.
+// Context values (trace IDs, tenant IDs, etc.) will be inherited by task handlers.
+// Returns the manager and a cleanup function that cancels all running goroutines.
+func NewFirestoreOnceTaskManager[TaskKind ~string](ctx context.Context, client *firestore.Client) (m Manager[TaskKind], cleanup func()) {
+	ctx, cleanup = context.WithCancel(ctx)
 
 	queryBuilder := newFirestoreQueryBuilder(client.Collection(CollectionOnceTasks), getTaskEnv())
 
-	m := &firestoreOnceTaskManager[TaskKind]{
+	m = &firestoreOnceTaskManager[TaskKind]{
 		client:              client,
 		ctx:                 ctx,
 		taskHandlers:        make(map[TaskKind]Handler[TaskKind]),
@@ -52,7 +54,7 @@ func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (Ma
 
 		queryBuilder: queryBuilder,
 	}
-	return m, cancel
+	return m, cleanup
 }
 
 // CreateTask creates a once task to Firestore.

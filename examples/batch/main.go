@@ -152,7 +152,7 @@ func main() {
 	defer client.Close()
 
 	// Create the OnceTask manager
-	manager, cancelManager := oncetask.NewFirestoreOnceTaskManager[TaskKind](client)
+	manager, cancelManager := oncetask.NewFirestoreOnceTaskManager[TaskKind](ctx, client)
 
 	// Register handlers
 	if err := registerHandlers(manager); err != nil {

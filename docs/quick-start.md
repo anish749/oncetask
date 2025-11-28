@@ -16,7 +16,8 @@ go get github.com/anish749/oncetask
 import "oncetask"
 
 // Initialize with your Firestore client
-manager, cancel := oncetask.NewFirestoreOnceTaskManager[MyTaskKind](firestoreClient)
+ctx := context.Background()
+manager, cancel := oncetask.NewFirestoreOnceTaskManager[MyTaskKind](ctx, firestoreClient)
 defer cancel()
 ```
 

@@ -21,8 +21,9 @@
 //
 // Basic Usage:
 //
-//	// Create a task manager
-//	manager, cleanup := oncetask.NewFirestoreOnceTaskManager[TaskKind](firestoreClient)
+//	// Create a task manager with context
+//	ctx := context.Background()
+//	manager, cleanup := oncetask.NewFirestoreOnceTaskManager[TaskKind](ctx, firestoreClient)
 //	defer cleanup()
 //
 //	// Register a task handler
@@ -140,8 +141,10 @@ type ScheduledTask = oncetask.ScheduledTask
 type RecurrenceProvider = oncetask.RecurrenceProvider
 
 // NewFirestoreOnceTaskManager creates a new Firestore-backed task manager.
-func NewFirestoreOnceTaskManager[TaskKind ~string](client *firestore.Client) (manager Manager[TaskKind], cleanup func()) {
-	return oncetask.NewFirestoreOnceTaskManager[TaskKind](client)
+// The provided context is used as the parent for all background task processing.
+// Context values (trace IDs, tenant IDs, etc.) will be inherited by task handlers.
+func NewFirestoreOnceTaskManager[TaskKind ~string](ctx context.Context, client *firestore.Client) (manager Manager[TaskKind], cleanup func()) {
+	return oncetask.NewFirestoreOnceTaskManager[TaskKind](ctx, client)
 }
 
 // ContextHandler is a slog.Handler that automatically adds task context to logs.

@@ -23,7 +23,8 @@ go get github.com/anish749/oncetask
 
 ```go
 // Initialize
-manager, cancel := oncetask.NewFirestoreOnceTaskManager[MyTaskKind](firestoreClient)
+ctx := context.Background()
+manager, cancel := oncetask.NewFirestoreOnceTaskManager[MyTaskKind](ctx, firestoreClient)
 defer cancel()
 
 // Register handler
