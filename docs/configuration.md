@@ -70,7 +70,7 @@ oncetask.WithNoRetry()
 
 ## Lease Duration
 
-Controls how long a task is leased during execution:
+Controls how long a task is leased during execution. This acts as a timeout for task execution:
 
 ```go
 oncetask.WithLeaseDuration(15 * time.Minute)
@@ -79,14 +79,19 @@ oncetask.WithLeaseDuration(15 * time.Minute)
 **Default:** 10 minutes
 
 **Purpose:**
-- Prevents other workers from processing the same task
-- Automatically expires if the worker crashes
+- Acts as a timeout for task execution
+- Prevents other workers from processing the same task during the lease period
+- Automatically expires if the worker crashes or the task exceeds the lease duration
 - Should be longer than your expected task execution time
 
+**Behavior:**
+- If a task exceeds the lease duration, the lease expires and the task may be picked up by another worker
+- This means tasks running longer than the lease duration can be interrupted and retried
+
 **Recommendations:**
-- Set it to 2-3x your typical task execution time
-- For long-running tasks, increase accordingly
-- For quick tasks, you can reduce it to minimize recovery time
+- Set it to 2-3x your typical task execution time to account for variability
+- For long-running tasks, increase accordingly to prevent premature timeouts
+- For quick tasks, you can reduce it to minimize recovery time after crashes
 
 ## Concurrency
 
@@ -185,9 +190,10 @@ manager.RegisterTaskHandler(
    - Use no retry for non-idempotent operations
 
 2. **Lease Duration**:
-   - Set to 2-3x typical execution time
+   - Set to 2-3x typical execution time to avoid timeouts
    - Account for retries within the lease period
    - Balance recovery speed vs unnecessary retries
+   - Remember it acts as a timeout - tasks exceeding it will be interrupted
 
 3. **Concurrency**:
    - Start with 1 and increase based on monitoring

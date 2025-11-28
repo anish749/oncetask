@@ -1,14 +1,15 @@
 # oncetask
 
-Idempotent task execution with Firestore. Ensures tasks run exactly once with built-in retries, leasing, and recurrence support.
+Lease-based idempotent task execution with Firestore. Ensures tasks complete exactly once with automatic retries on failure, lease-based concurrency control, and recurrence support.
 
 ## Features
 
+- **Lease-based execution** - Tasks use leases to prevent concurrent execution; auto-expires on crashes
+- **Exactly-once completion** - Tasks are retried on failure until they succeed, ensuring exactly-once successful completion
 - **Idempotent execution** - Tasks identified by deterministic IDs, safe to create multiple times
-- **Leasing** - Prevents concurrent execution; auto-expires on crashes
+- **Configurable retry policies** - Exponential backoff, fixed delay, or no retry
 - **Resource key serialization** - Tasks with the same resource key execute one at a time
 - **Grouped execution** - Process all pending tasks for a resource key together in a single handler call
-- **Retries** - Configurable retry policies (exponential backoff, fixed delay, no retry)
 - **Recurring tasks** - RFC 5545 RRULE support for scheduled recurring execution
 - **Environment isolation** - Logical separation via `ONCE_TASK_ENV`
 
@@ -22,7 +23,8 @@ go get github.com/anish749/oncetask
 
 ```go
 // Initialize
-manager, cancel := oncetask.NewFirestoreOnceTaskManager[MyTaskKind](firestoreClient)
+ctx := context.Background()
+manager, cancel := oncetask.NewFirestoreOnceTaskManager[MyTaskKind](ctx, firestoreClient)
 defer cancel()
 
 // Register handler

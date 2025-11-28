@@ -14,7 +14,7 @@ const (
 )
 
 // withTaskContext adds both task ID and resource key to the context for automatic logging
-func withTaskContext(ctx context.Context, taskID string, resourceKey string) context.Context {
+func withTaskContext(ctx context.Context, taskID, resourceKey string) context.Context {
 	if taskID != "" {
 		ctx = context.WithValue(ctx, taskIDContextKey, taskID)
 	}
@@ -71,6 +71,7 @@ func (h *ContextHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 // Handle implements slog.Handler and automatically adds task ID and resource key from context
+//
 //nolint:gocritic // slog.Handler interface requires Record by value
 func (h *ContextHandler) Handle(ctx context.Context, r slog.Record) error {
 	// Extract task ID from context and add it to the record

@@ -35,7 +35,7 @@ func processTaskFailure[TaskKind ~string](
 		At:    now.Format(time.RFC3339),
 		Error: execErr.Error(),
 	}
-	newErrors := append(task.Errors, newError)
+	task.Errors = append(task.Errors, newError)
 
 	if retryPolicy.ShouldRetry(task.Attempts, execErr) {
 		backoffDuration := retryPolicy.NextRetryDelay(task.Attempts, execErr)
@@ -44,7 +44,7 @@ func processTaskFailure[TaskKind ~string](
 		return []firestore.Update{
 			{Path: "leasedUntil", Value: ""},
 			{Path: "waitUntil", Value: waitUntil},
-			{Path: "errors", Value: newErrors},
+			{Path: "errors", Value: task.Errors},
 		}
 	}
 
@@ -52,6 +52,6 @@ func processTaskFailure[TaskKind ~string](
 	return []firestore.Update{
 		{Path: "doneAt", Value: now.Format(time.RFC3339)},
 		{Path: "leasedUntil", Value: ""},
-		{Path: "errors", Value: newErrors},
+		{Path: "errors", Value: task.Errors},
 	}
 }

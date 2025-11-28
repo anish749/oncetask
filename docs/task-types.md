@@ -25,7 +25,7 @@ manager.RegisterTaskHandler(TaskKindSendEmail, func(ctx context.Context, task *o
 
 ### Resource Key Serialization
 
-Even with single task handlers, you can serialize execution per resource using the `ResourceKey` field. Tasks with the same resource key will execute one at a time, preventing concurrent modifications to the same resource.
+Even with single task handlers, you can serialize execution per resource using the `ResourceKey` field. Tasks with the same resource key will execute one at a time (enforced via leases), preventing concurrent modifications to the same resource.
 
 ```go
 type SyncData struct {
@@ -68,10 +68,11 @@ manager.RegisterResourceKeyHandler(TaskKindSync, func(ctx context.Context, tasks
 
 ### Behavior
 
+- A lease is acquired for the resource key, preventing concurrent processing
 - All pending tasks with the same resource key are collected
 - The handler receives a slice of all tasks
 - If the handler succeeds, all tasks are marked as completed
-- If the handler fails, all tasks retry according to the retry policy
+- If the handler fails, all tasks are retried together according to the retry policy until success
 - Tasks are still identified by unique idempotent IDs
 
 ## Choosing Between Handler Types

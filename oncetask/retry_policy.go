@@ -24,6 +24,7 @@ type ExponentialBackoffPolicy struct {
 	Multiplier  float64       // Multiplier per attempt (default: 2.0)
 }
 
+// ShouldRetry returns true if the task should be retried based on attempt count.
 func (p ExponentialBackoffPolicy) ShouldRetry(attempts int, err error) bool {
 	if p.MaxAttempts == 0 {
 		return true // Unlimited retries
@@ -31,6 +32,7 @@ func (p ExponentialBackoffPolicy) ShouldRetry(attempts int, err error) bool {
 	return attempts < p.MaxAttempts
 }
 
+// NextRetryDelay calculates the exponential backoff delay for the next retry.
 func (p ExponentialBackoffPolicy) NextRetryDelay(attempts int, err error) time.Duration {
 	baseDelay := p.BaseDelay
 	if baseDelay == 0 {
@@ -65,6 +67,7 @@ type FixedDelayPolicy struct {
 	Delay       time.Duration // Delay between retries
 }
 
+// ShouldRetry returns true if the task should be retried based on attempt count.
 func (p FixedDelayPolicy) ShouldRetry(attempts int, err error) bool {
 	if p.MaxAttempts == 0 {
 		return true
@@ -72,6 +75,7 @@ func (p FixedDelayPolicy) ShouldRetry(attempts int, err error) bool {
 	return attempts < p.MaxAttempts
 }
 
+// NextRetryDelay returns the fixed delay for the next retry.
 func (p FixedDelayPolicy) NextRetryDelay(attempts int, err error) time.Duration {
 	return p.Delay
 }
@@ -79,10 +83,12 @@ func (p FixedDelayPolicy) NextRetryDelay(attempts int, err error) time.Duration 
 // NoRetryPolicy never retries - tasks fail permanently on first error.
 type NoRetryPolicy struct{}
 
+// ShouldRetry always returns false - no retries are performed.
 func (p NoRetryPolicy) ShouldRetry(attempts int, err error) bool {
 	return false
 }
 
+// NextRetryDelay always returns 0 - no retry delay is needed.
 func (p NoRetryPolicy) NextRetryDelay(attempts int, err error) time.Duration {
 	return 0
 }
