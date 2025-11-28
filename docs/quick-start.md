@@ -36,7 +36,10 @@ manager.RegisterTaskHandler(TaskKindSendEmail, func(ctx context.Context, task *o
 manager.CreateTask(ctx, SendEmailData{To: "user@example.com", Subject: "Hello"})
 ```
 
-That's it! The task will be automatically processed by your handler with built-in retries, leasing, and idempotency guarantees.
+That's it! The task will be automatically processed by your handler:
+- **Lease-based execution** prevents concurrent execution by multiple workers
+- **Automatic retries** on failure until the task succeeds (configurable retry policy)
+- **Idempotency guarantees** ensure safe duplicate task creation
 
 ## Next Steps
 

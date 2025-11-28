@@ -1,14 +1,18 @@
-// Package oncetask provides a task management system for executing tasks exactly once
+// Package oncetask provides a lease-based task management system for executing tasks exactly once
 // with support for retries, recurrence, cancellation, and resource-based locking.
 //
 // OnceTask is designed for reliable background task processing with Firestore as the backend.
+// Tasks are executed using a lease-based mechanism to prevent concurrent execution, and will be
+// retried on failure according to the configured retry policy until they succeed.
+//
 // It provides three execution strategies:
 //   - Concurrent: Multiple tasks of the same kind execute concurrently
 //   - OnePerResourceKey: Only one task with the same resource key executes at a time
 //   - AllPerResourceKey: All pending tasks with the same resource key are batched together
 //
 // Key Features:
-//   - Exactly-once execution semantics with retry support
+//   - Lease-based exactly-once execution semantics with automatic retry on failure
+//   - Configurable lease duration acts as a timeout for task execution
 //   - Flexible retry policies (exponential backoff, fixed delay, no retry)
 //   - Task cancellation with optional cleanup handlers
 //   - Recurring tasks using rrule syntax
@@ -43,7 +47,8 @@ import (
 
 // Re-export all public types and functions from the oncetask package
 
-// OnceTask represents a task to be executed exactly once.
+// OnceTask represents a task to be executed exactly once using a lease-based mechanism.
+// The task will be retried on failure according to the configured retry policy until it succeeds.
 type OnceTask[TaskKind ~string] = oncetask.OnceTask[TaskKind]
 type Data[TaskKind comparable] = oncetask.Data[TaskKind]
 type Manager[TaskKind ~string] = oncetask.Manager[TaskKind]

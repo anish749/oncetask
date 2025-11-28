@@ -66,7 +66,7 @@ func (d SyncUserData) GetResourceKey() string {
 }
 ```
 
-Tasks with the same resource key will execute one at a time, preventing concurrent operations on the same resource.
+Tasks with the same resource key will execute one at a time (enforced via leases), preventing concurrent operations on the same resource.
 
 ### ScheduledTask
 
