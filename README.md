@@ -46,6 +46,7 @@ manager.CreateTask(ctx, SendEmailData{To: "user@example.com", Subject: "Hello"})
 - **[Configuration](docs/configuration.md)** - Retry policies, concurrency, and leasing
 - **[Recurrence](docs/recurrence.md)** - Scheduled recurring tasks
 - **[Cancellation](docs/cancellation.md)** - Task cancellation and cleanup
+- **[Deletion](docs/deletion.md)** - Permanently removing tasks
 
 ## License
 
