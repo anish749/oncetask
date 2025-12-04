@@ -128,4 +128,16 @@ type Manager[TaskKind ~string] interface {
 	// CancelTasksByIds marks multiple tasks as cancelled (bulk operation via BulkWriter).
 	// Returns count of tasks cancelled. Partial failures return both count and aggregated error.
 	CancelTasksByIds(ctx context.Context, taskIDs []string) (int, error)
+
+	// DeleteTask permanently removes a single task from Firestore.
+	// Idempotent: no error if task doesn't exist or belongs to different environment.
+	// WARNING: If the task is currently being executed (leased), the handler will
+	// continue running but fail when attempting to update task status on completion.
+	DeleteTask(ctx context.Context, taskID string) error
+
+	// DeleteTasksByIds permanently removes multiple tasks from Firestore (bulk operation via BulkWriter).
+	// Returns count of tasks deleted. Partial failures return both count and aggregated error.
+	// Idempotent: non-existent tasks and tasks in other environments are silently skipped.
+	// WARNING: Deleting leased tasks will cause running handlers to fail on completion.
+	DeleteTasksByIds(ctx context.Context, taskIDs []string) (int, error)
 }

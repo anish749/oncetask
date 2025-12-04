@@ -350,6 +350,7 @@ Track cancellation metrics:
 
 ## Next Steps
 
+- Learn about [Deletion](deletion.md) for permanently removing tasks
 - Learn about [Configuration](configuration.md) for retry policies and concurrency
 - Explore [Recurrence](recurrence.md) for scheduled recurring tasks
 - Understand [Task Types](task-types.md) for different execution patterns
