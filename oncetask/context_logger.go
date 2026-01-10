@@ -47,6 +47,24 @@ func withResourceKeyTaskContext[TaskKind ~string](ctx context.Context, tasks []O
 	return withTaskContext(ctx, taskID, tasks[0].ResourceKey)
 }
 
+// TaskIDFromContext returns the task ID stored in the context, or an empty string if not present.
+// This is useful for debugging or when you need to access the current task ID within a handler.
+func TaskIDFromContext(ctx context.Context) string {
+	if taskID, ok := ctx.Value(taskIDContextKey).(string); ok {
+		return taskID
+	}
+	return ""
+}
+
+// ResourceKeyFromContext returns the resource key stored in the context, or an empty string if not present.
+// This is useful for debugging or when you need to access the current resource key within a handler.
+func ResourceKeyFromContext(ctx context.Context) string {
+	if resourceKey, ok := ctx.Value(resourceKeyContextKey).(string); ok {
+		return resourceKey
+	}
+	return ""
+}
+
 // ContextHandler is a slog.Handler that automatically extracts the task ID and resource key from context
 // and adds them as attributes to all log records.
 //
