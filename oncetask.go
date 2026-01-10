@@ -152,3 +152,11 @@ type ContextHandler = oncetask.ContextHandler
 
 // NewContextHandler creates a new ContextHandler that wraps the provided handler.
 var NewContextHandler = oncetask.NewContextHandler
+
+// GetCurrentTaskID returns the task ID stored in the context, or an empty string if not present.
+// This is useful for debugging or when you need to access the current task ID within a handler.
+var GetCurrentTaskID = oncetask.GetCurrentTaskID
+
+// GetCurrentTaskResourceKey returns the resource key stored in the context, or an empty string if not present.
+// This is useful for debugging or when you need to access the current resource key within a handler.
+var GetCurrentTaskResourceKey = oncetask.GetCurrentTaskResourceKey
