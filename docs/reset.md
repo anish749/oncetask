@@ -76,6 +76,24 @@ err := manager.ResetTask(ctx, recurrenceTaskID)
 // Generator will resume spawning occurrences from now
 ```
 
+## Environment Isolation
+
+Reset respects environment boundaries set by `ONCE_TASK_ENV`:
+
+```go
+// Only resets tasks in current environment
+os.Setenv("ONCE_TASK_ENV", "production")
+manager.ResetTask(ctx, taskID) // Resets if task.Env == "production"
+```
+
+**Important:** Attempting to reset a task from a different environment will return an error:
+
+```go
+os.Setenv("ONCE_TASK_ENV", "production")
+// If task belongs to "staging" environment
+err := manager.ResetTask(ctx, taskID) // Returns error: "task XYZ is in different environment"
+```
+
 ## Best Practices
 
 **1. Fix root cause first**

@@ -45,7 +45,9 @@ func (m *firestoreOnceTaskManager[TaskKind]) ResetTask(
 // - CancelledAt = ""
 // - Result = nil
 //
-// Idempotent: Tasks already in non-terminal states are skipped (no-op).
+// Validation:
+// - Returns error if task belongs to a different environment
+// - Idempotent: Tasks already in non-terminal states are skipped (no-op)
 func (m *firestoreOnceTaskManager[TaskKind]) ResetTasksByIds(
 	ctx context.Context,
 	taskIDs []string,
@@ -83,7 +85,8 @@ func (m *firestoreOnceTaskManager[TaskKind]) ResetTasksByIds(
 		}
 
 		if task.Env != env {
-			continue // Environment isolation
+			errs = append(errs, fmt.Errorf("task %s is in different environment", docSnap.Ref.ID))
+			continue
 		}
 
 		if task.DoneAt == "" {

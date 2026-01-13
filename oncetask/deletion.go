@@ -10,7 +10,8 @@ import (
 )
 
 // DeleteTask permanently removes a single task from Firestore.
-// Idempotent: no error if task doesn't exist or belongs to different environment.
+// Returns error if task belongs to a different environment.
+// Idempotent: no error if task doesn't exist.
 func (m *firestoreOnceTaskManager[TaskKind]) DeleteTask(
 	ctx context.Context,
 	taskID string,
@@ -21,6 +22,10 @@ func (m *firestoreOnceTaskManager[TaskKind]) DeleteTask(
 
 // DeleteTasksByIds permanently removes multiple tasks from Firestore.
 // Returns count of tasks deleted. Partial failures return both count and aggregated error.
+//
+// Validation:
+// - Returns error if task belongs to a different environment
+// - Idempotent: no error if task doesn't exist
 func (m *firestoreOnceTaskManager[TaskKind]) DeleteTasksByIds(
 	ctx context.Context,
 	taskIDs []string,
@@ -56,6 +61,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) DeleteTasksByIds(
 		}
 
 		if task.Env != env {
+			errs = append(errs, fmt.Errorf("task %s is in different environment", docSnap.Ref.ID))
 			continue
 		}
 
