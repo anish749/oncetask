@@ -140,4 +140,22 @@ type Manager[TaskKind ~string] interface {
 	// Idempotent: non-existent tasks and tasks in other environments are silently skipped.
 	// WARNING: Deleting leased tasks will cause running handlers to fail on completion.
 	DeleteTasksByIds(ctx context.Context, taskIDs []string) (int, error)
+
+	// ResetTask resets a single task back to pending state for re-execution.
+	// Only applies to tasks in terminal states (doneAt != "").
+	// Idempotent: no-op if task is already pending/running.
+	// Clears all execution state (Attempts, Errors, Result) and cancellation state (IsCancelled).
+	// Sets WaitUntil=NoWait for immediate execution.
+	ResetTask(ctx context.Context, taskID string) error
+
+	// ResetTasksByResourceKey resets all terminal-state tasks with resourceKey back to pending.
+	// Returns count of tasks reset.
+	// Only affects tasks in terminal states (doneAt != "").
+	ResetTasksByResourceKey(ctx context.Context, taskType TaskKind, resourceKey string) (int, error)
+
+	// ResetTasksByIds resets multiple tasks back to pending state (bulk operation via BulkWriter).
+	// Returns count of tasks reset. Partial failures return both count and aggregated error.
+	// Only resets tasks in terminal states (doneAt != "").
+	// Idempotent: Tasks already in non-terminal states are skipped (no-op).
+	ResetTasksByIds(ctx context.Context, taskIDs []string) (int, error)
 }
