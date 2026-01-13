@@ -54,7 +54,6 @@ When a task is deleted:
 Deletion operations are idempotent:
 
 - Deleting a non-existent task returns no error
-- Deleting a task from a different environment is silently skipped
 - Re-deleting an already deleted task succeeds
 
 ```go
@@ -70,10 +69,16 @@ Deletion respects environment boundaries set by `ONCE_TASK_ENV`:
 ```go
 // Only deletes tasks in current environment
 os.Setenv("ONCE_TASK_ENV", "production")
-manager.DeleteTask(ctx, taskID) // Only deletes if task.Env == "production"
+manager.DeleteTask(ctx, taskID) // Deletes if task.Env == "production"
 ```
 
-Tasks from other environments are silently skipped.
+**Important:** Attempting to delete a task from a different environment will return an error:
+
+```go
+os.Setenv("ONCE_TASK_ENV", "production")
+// If task belongs to "staging" environment
+err := manager.DeleteTask(ctx, taskID) // Returns error: "task XYZ is in different environment"
+```
 
 ## Deleting Running Tasks
 

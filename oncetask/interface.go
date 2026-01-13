@@ -127,22 +127,27 @@ type Manager[TaskKind ~string] interface {
 
 	// CancelTasksByIds marks multiple tasks as cancelled (bulk operation via BulkWriter).
 	// Returns count of tasks cancelled. Partial failures return both count and aggregated error.
+	// Returns error if task belongs to a different environment.
+	// Idempotent: Tasks already done or cancelled are skipped (no-op).
 	CancelTasksByIds(ctx context.Context, taskIDs []string) (int, error)
 
 	// DeleteTask permanently removes a single task from Firestore.
-	// Idempotent: no error if task doesn't exist or belongs to different environment.
+	// Returns error if task belongs to a different environment.
+	// Idempotent: no error if task doesn't exist.
 	// WARNING: If the task is currently being executed (leased), the handler will
 	// continue running but fail when attempting to update task status on completion.
 	DeleteTask(ctx context.Context, taskID string) error
 
 	// DeleteTasksByIds permanently removes multiple tasks from Firestore (bulk operation via BulkWriter).
 	// Returns count of tasks deleted. Partial failures return both count and aggregated error.
-	// Idempotent: non-existent tasks and tasks in other environments are silently skipped.
+	// Returns error if task belongs to a different environment.
+	// Idempotent: non-existent tasks are silently skipped.
 	// WARNING: Deleting leased tasks will cause running handlers to fail on completion.
 	DeleteTasksByIds(ctx context.Context, taskIDs []string) (int, error)
 
 	// ResetTask resets a single task back to pending state for re-execution.
 	// Only applies to tasks in terminal states (doneAt != "").
+	// Returns error if task belongs to a different environment.
 	// Idempotent: no-op if task is already pending/running.
 	// Clears all execution state (Attempts, Errors, Result) and cancellation state (IsCancelled).
 	// Sets WaitUntil=NoWait for immediate execution.
@@ -151,6 +156,7 @@ type Manager[TaskKind ~string] interface {
 	// ResetTasksByIds resets multiple tasks back to pending state (bulk operation via BulkWriter).
 	// Returns count of tasks reset. Partial failures return both count and aggregated error.
 	// Only resets tasks in terminal states (doneAt != "").
+	// Returns error if task belongs to a different environment.
 	// Idempotent: Tasks already in non-terminal states are skipped (no-op).
 	ResetTasksByIds(ctx context.Context, taskIDs []string) (int, error)
 }

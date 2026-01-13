@@ -169,6 +169,24 @@ manager.RegisterTaskHandler(
                └─> done-failed
 ```
 
+## Environment Isolation
+
+Cancellation respects environment boundaries set by `ONCE_TASK_ENV`:
+
+```go
+// Only cancels tasks in current environment
+os.Setenv("ONCE_TASK_ENV", "production")
+manager.CancelTask(ctx, taskID) // Cancels if task.Env == "production"
+```
+
+**Important:** Attempting to cancel a task from a different environment will return an error:
+
+```go
+os.Setenv("ONCE_TASK_ENV", "production")
+// If task belongs to "staging" environment
+err := manager.CancelTask(ctx, taskID) // Returns error: "task XYZ is in different environment"
+```
+
 ## Recurrence Task Cancellation
 
 Cancelling a recurrence task (generator) has special behavior:

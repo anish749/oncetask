@@ -63,6 +63,10 @@ func (m *firestoreOnceTaskManager[TaskKind]) CancelTasksByResourceKey(
 
 // CancelTasksByIds marks multiple tasks as cancelled (bulk operation via BulkWriter).
 // Returns count of tasks cancelled. Partial failures return both count and aggregated error.
+//
+// Validation:
+// - Returns error if task belongs to a different environment
+// - Idempotent: Tasks already done or cancelled are skipped (no-op)
 func (m *firestoreOnceTaskManager[TaskKind]) CancelTasksByIds(
 	ctx context.Context,
 	taskIDs []string,
@@ -100,7 +104,8 @@ func (m *firestoreOnceTaskManager[TaskKind]) CancelTasksByIds(
 		}
 
 		if task.Env != env {
-			continue // Environment isolation
+			errs = append(errs, fmt.Errorf("task %s is in different environment", docSnap.Ref.ID))
+			continue
 		}
 
 		if task.DoneAt != "" || task.IsCancelled {

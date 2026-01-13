@@ -264,7 +264,7 @@ func TestResetIdempotency(t *testing.T) {
 }
 
 func TestEnvironmentIsolation(t *testing.T) {
-	t.Run("Task from different environment should be skipped", func(t *testing.T) {
+	t.Run("Task from different environment should return error", func(t *testing.T) {
 		currentEnv := getTaskEnv()
 		task := createCompletedTask("task-1")
 		task.Env = "different-env"
@@ -274,10 +274,10 @@ func TestEnvironmentIsolation(t *testing.T) {
 			t.Fatalf("Test setup: task should have different environment")
 		}
 
-		// Reset should skip this task due to environment mismatch
-		shouldSkip := task.Env != currentEnv
-		if !shouldSkip {
-			t.Errorf("Task from different environment should be skipped")
+		// Reset should return an error for task in different environment
+		shouldError := task.Env != currentEnv
+		if !shouldError {
+			t.Errorf("Task from different environment should return error")
 		}
 	})
 }
