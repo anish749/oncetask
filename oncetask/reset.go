@@ -31,36 +31,6 @@ func (m *firestoreOnceTaskManager[TaskKind]) ResetTask(
 	return err
 }
 
-// ResetTasksByResourceKey resets all terminal-state tasks with resourceKey back to pending.
-// Returns count of tasks reset.
-// Only affects tasks in terminal states (doneAt != "").
-func (m *firestoreOnceTaskManager[TaskKind]) ResetTasksByResourceKey(
-	ctx context.Context,
-	taskType TaskKind,
-	resourceKey string,
-) (int, error) {
-	// Query all done tasks with resourceKey
-	query := m.queryBuilder.
-		doneTasksByResourceKey(string(taskType), resourceKey).
-		Select() // Empty select to retrieve only document IDs
-
-	docs, err := query.Documents(ctx).GetAll()
-	if err != nil {
-		return 0, fmt.Errorf("failed to query tasks: %w", err)
-	}
-
-	if len(docs) == 0 {
-		return 0, nil
-	}
-
-	// Collect task IDs and delegate to ResetTasksByIds
-	taskIDs := make([]string, len(docs))
-	for i, doc := range docs {
-		taskIDs[i] = doc.Ref.ID
-	}
-	return m.ResetTasksByIds(ctx, taskIDs)
-}
-
 // ResetTasksByIds resets multiple tasks back to pending state (bulk operation via BulkWriter).
 // Returns count of tasks reset. Partial failures return both count and aggregated error.
 // Only resets tasks in terminal states (doneAt != "").

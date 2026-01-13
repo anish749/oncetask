@@ -148,11 +148,6 @@ type Manager[TaskKind ~string] interface {
 	// Sets WaitUntil=NoWait for immediate execution.
 	ResetTask(ctx context.Context, taskID string) error
 
-	// ResetTasksByResourceKey resets all terminal-state tasks with resourceKey back to pending.
-	// Returns count of tasks reset.
-	// Only affects tasks in terminal states (doneAt != "").
-	ResetTasksByResourceKey(ctx context.Context, taskType TaskKind, resourceKey string) (int, error)
-
 	// ResetTasksByIds resets multiple tasks back to pending state (bulk operation via BulkWriter).
 	// Returns count of tasks reset. Partial failures return both count and aggregated error.
 	// Only resets tasks in terminal states (doneAt != "").

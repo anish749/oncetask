@@ -71,15 +71,6 @@ func (q *firestoreQueryBuilder) nonDoneTasksByResourceKey(taskType, resourceKey 
 		Where("doneAt", "==", "")
 }
 
-// doneTasksByResourceKey returns all done tasks for a specific task type and resource key.
-// Used by ResetTasksByResourceKey to find tasks eligible for reset.
-func (q *firestoreQueryBuilder) doneTasksByResourceKey(taskType, resourceKey string) firestore.Query {
-	return q.base().
-		Where("type", "==", taskType).
-		Where("resourceKey", "==", resourceKey).
-		Where("doneAt", "!=", "")
-}
-
 // doc returns a document reference for a task ID.
 func (q *firestoreQueryBuilder) doc(taskID string) *firestore.DocumentRef {
 	return q.collection.Doc(taskID)

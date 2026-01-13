@@ -15,6 +15,7 @@
 //   - Configurable lease duration acts as a timeout for task execution
 //   - Flexible retry policies (exponential backoff, fixed delay, no retry)
 //   - Task cancellation with optional cleanup handlers
+//   - Task reset for re-executing completed, failed, or cancelled tasks
 //   - Recurring tasks using rrule syntax
 //   - Resource-based locking for coordinated execution
 //   - Batch processing capabilities
