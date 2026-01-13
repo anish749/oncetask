@@ -86,10 +86,10 @@ func createLeasedTask(id string) OnceTask[string] {
 
 func TestResetEligibility(t *testing.T) {
 	tests := []struct {
-		name          string
 		task          OnceTask[string]
-		shouldBeReset bool
+		name          string
 		description   string
+		shouldBeReset bool
 	}{
 		{
 			name:          "COMPLETED task should be eligible",
