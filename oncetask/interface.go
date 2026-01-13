@@ -143,14 +143,15 @@ type Manager[TaskKind ~string] interface {
 
 	// ResetTask resets a single task back to pending state for re-execution.
 	// Only applies to tasks in terminal states (doneAt != "").
-	// Idempotent: no-op if task is already pending/running.
+	// Returns error if task doesn't exist or is in a different environment.
+	// Idempotent: returns nil if task is already pending/running.
 	// Clears all execution state (Attempts, Errors, Result) and cancellation state (IsCancelled).
 	// Sets WaitUntil=NoWait for immediate execution.
 	ResetTask(ctx context.Context, taskID string) error
 
 	// ResetTasksByIds resets multiple tasks back to pending state (bulk operation via BulkWriter).
-	// Returns count of tasks reset. Partial failures return both count and aggregated error.
+	// Returns ResetTasksResult containing the status for each task.
 	// Only resets tasks in terminal states (doneAt != "").
-	// Idempotent: Tasks already in non-terminal states are skipped (no-op).
-	ResetTasksByIds(ctx context.Context, taskIDs []string) (int, error)
+	// Possible statuses: Success, NotFound, DifferentEnv, NotTerminal (idempotent), Error.
+	ResetTasksByIds(ctx context.Context, taskIDs []string) ResetTasksResult
 }

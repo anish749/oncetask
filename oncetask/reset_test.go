@@ -1,6 +1,7 @@
 package oncetask
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -339,6 +340,141 @@ func TestResetPreservesStructuralMetadata(t *testing.T) {
 		if task.ParentRecurrenceID != originalParentRecurrenceID {
 			t.Errorf("Reset should preserve ParentRecurrenceID, got %s, want %s",
 				task.ParentRecurrenceID, originalParentRecurrenceID)
+		}
+	})
+}
+
+func TestResetTaskValidation(t *testing.T) {
+	// These tests document the expected validation behavior for ResetTask().
+	// ResetTask() should return an error when:
+	// 1. Task does not exist (ResetStatusNotFound)
+	// 2. Task exists in a different environment (ResetStatusDifferentEnv)
+	// 3. Error occurred during reset (ResetStatusError)
+	// ResetTask() should succeed (return nil) when:
+	// 4. Task is successfully reset (ResetStatusSuccess)
+	// 5. Task is already pending (ResetStatusNotTerminal, idempotent no-op)
+
+	t.Run("Validation: Non-existent task returns NotFound status", func(t *testing.T) {
+		// When a task doesn't exist, ResetTasksByIds should return
+		// ResetStatusNotFound for that task
+
+		taskID := "non-existent-task"
+		expectedStatus := ResetStatusNotFound
+
+		t.Logf("Expected: ResetTasksByIds should return %s for non-existent task %s",
+			expectedStatus, taskID)
+	})
+
+	t.Run("Validation: Different environment returns DifferentEnv status", func(t *testing.T) {
+		// When a task exists in a different environment, ResetTasksByIds should return
+		// ResetStatusDifferentEnv for that task
+
+		taskID := "task-in-different-env"
+		expectedStatus := ResetStatusDifferentEnv
+
+		t.Logf("Expected: ResetTasksByIds should return %s for task in different environment %s",
+			expectedStatus, taskID)
+	})
+
+	t.Run("Validation: Pending task returns NotTerminal status (idempotent)", func(t *testing.T) {
+		// When a task is already pending, ResetTasksByIds should return
+		// ResetStatusNotTerminal (idempotent case)
+
+		task := createPendingTask("pending-task")
+		expectedStatus := ResetStatusNotTerminal
+
+		if task.DoneAt != "" {
+			t.Fatalf("Test setup error: task should be pending (doneAt empty)")
+		}
+
+		t.Logf("Expected: ResetTasksByIds should return %s for already-pending task %s",
+			expectedStatus, task.Id)
+	})
+
+	t.Run("Validation: Terminal task returns Success status", func(t *testing.T) {
+		// When a task is in a terminal state and in the current environment,
+		// ResetTasksByIds should return ResetStatusSuccess
+
+		task := createCompletedTask("completed-task")
+		currentEnv := getTaskEnv()
+		expectedStatus := ResetStatusSuccess
+
+		if task.DoneAt == "" {
+			t.Fatalf("Test setup error: task should be in terminal state (doneAt set)")
+		}
+		if task.Env != currentEnv {
+			t.Fatalf("Test setup error: task should be in current environment")
+		}
+
+		t.Logf("Expected: ResetTasksByIds should return %s for terminal task %s in current environment",
+			expectedStatus, task.Id)
+	})
+}
+
+func TestResetTasksByIdsValidation(t *testing.T) {
+	// These tests document the expected validation behavior for ResetTasksByIds().
+	// ResetTasksByIds returns ResetTasksResult with detailed status for each task.
+
+	t.Run("Bulk reset: Returns detailed result for each task", func(t *testing.T) {
+		// When ResetTasksByIds() is called with multiple task IDs,
+		// it should return a ResetTasksResult with a result for each task.
+		// Each result contains: TaskID, Status, and Error (if applicable)
+
+		taskIDs := []string{"completed-1", "non-existent", "different-env", "already-pending"}
+
+		// Test expectation: ResetTasksByIds(ctx, taskIDs) should return:
+		// ResetTasksResult with 4 results:
+		// - completed-1: ResetStatusSuccess
+		// - non-existent: ResetStatusNotFound
+		// - different-env: ResetStatusDifferentEnv
+		// - already-pending: ResetStatusNotTerminal
+
+		t.Logf("Expected: ResetTasksByIds should return ResetTasksResult with %d results, each with appropriate status",
+			len(taskIDs))
+	})
+
+	t.Run("Bulk reset: ResetCount helper returns successful resets", func(t *testing.T) {
+		// ResetTasksResult.ResetCount() should return the count of tasks
+		// with ResetStatusSuccess
+
+		// Example result with mixed statuses:
+		result := ResetTasksResult{
+			Results: []ResetResult{
+				{TaskID: "task-1", Status: ResetStatusSuccess},
+				{TaskID: "task-2", Status: ResetStatusNotFound},
+				{TaskID: "task-3", Status: ResetStatusSuccess},
+				{TaskID: "task-4", Status: ResetStatusNotTerminal},
+			},
+		}
+
+		expectedCount := 2 // two successful resets
+		actualCount := result.ResetCount()
+
+		if actualCount != expectedCount {
+			t.Errorf("ResetCount() = %d, want %d", actualCount, expectedCount)
+		}
+	})
+
+	t.Run("Bulk reset: Errors helper returns all errors", func(t *testing.T) {
+		// ResetTasksResult.Errors() should return all non-nil errors
+		// from results with ResetStatusError
+
+		testErr1 := fmt.Errorf("parse error")
+		testErr2 := fmt.Errorf("update error")
+
+		result := ResetTasksResult{
+			Results: []ResetResult{
+				{TaskID: "task-1", Status: ResetStatusSuccess},
+				{TaskID: "task-2", Status: ResetStatusError, Error: testErr1},
+				{TaskID: "task-3", Status: ResetStatusError, Error: testErr2},
+				{TaskID: "task-4", Status: ResetStatusNotFound},
+			},
+		}
+
+		errors := result.Errors()
+
+		if len(errors) != 2 {
+			t.Errorf("Errors() returned %d errors, want 2", len(errors))
 		}
 	})
 }

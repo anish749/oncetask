@@ -43,6 +43,61 @@ type Recurrence struct {
 	ExDates []string `json:"exdates" firestore:"exdates"` // Exception dates to skip
 }
 
+// ResetStatus represents the outcome of a reset operation for a single task.
+type ResetStatus string
+
+const (
+	// ResetStatusSuccess indicates the task was successfully reset to pending state.
+	ResetStatusSuccess ResetStatus = "reset"
+	// ResetStatusNotFound indicates the task ID does not exist.
+	ResetStatusNotFound ResetStatus = "not_found"
+	// ResetStatusDifferentEnv indicates the task exists in a different environment.
+	ResetStatusDifferentEnv ResetStatus = "different_env"
+	// ResetStatusNotTerminal indicates the task is not in a terminal state (already pending/running).
+	// This is an idempotent case and not an error.
+	ResetStatusNotTerminal ResetStatus = "not_terminal"
+	// ResetStatusError indicates an error occurred while resetting the task.
+	ResetStatusError ResetStatus = "error"
+)
+
+// ResetResult contains the result of resetting a single task.
+type ResetResult struct {
+	TaskID string      // ID of the task
+	Status ResetStatus // Status of the reset operation
+	Error  error       // Error if Status is ResetStatusError
+}
+
+// ResetTasksResult contains the results of resetting multiple tasks.
+type ResetTasksResult struct {
+	Results []ResetResult // Result for each task
+}
+
+// ResetCount returns the number of tasks that were successfully reset.
+func (r *ResetTasksResult) ResetCount() int {
+	count := 0
+	for _, result := range r.Results {
+		if result.Status == ResetStatusSuccess {
+			count++
+		}
+	}
+	return count
+}
+
+// Errors returns all errors encountered during the reset operation.
+// Returns nil if there were no errors.
+func (r *ResetTasksResult) Errors() []error {
+	var errs []error
+	for _, result := range r.Results {
+		if result.Error != nil {
+			errs = append(errs, result.Error)
+		}
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	return errs
+}
+
 // getTaskEnv returns the task environment from the `EnvVariable` environment variable.
 // If not set, returns `DefaultEnv`.
 func getTaskEnv() string {
