@@ -271,10 +271,10 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 
 		// Process cancelled tasks individually with cancellation handler
 		if len(cancelledTasks) > 0 {
-			cancellationHandler := SafeHandler(getCancellationHandler[TaskKind](config))
+			cancellationHandler := getCancellationHandler[TaskKind](config)
 			for _, task := range cancelledTasks {
 				ctx := withTaskContext(m.ctx, task.Id, task.ResourceKey)
-				result, execErr := cancellationHandler(ctx, &task)
+				result, execErr := SafeExecute(ctx, cancellationHandler, &task)
 				if err := m.completeBatch(ctx, []OnceTask[TaskKind]{task}, execErr, result, config); err != nil {
 					slog.ErrorContext(ctx, "Failed to complete cancelled task", "error", err, "taskId", task.Id)
 				}
@@ -293,10 +293,10 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 				slog.ErrorContext(m.ctx, "Single task handler claimed multiple tasks", "taskType", taskType, "count", len(normalTasks))
 				execErr = fmt.Errorf("expected 1 task, got %d", len(normalTasks))
 			} else {
-				result, execErr = SafeHandler(taskHandler)(withSingleTaskContext(m.ctx, normalTasks), &normalTasks[0])
+				result, execErr = SafeExecute(withSingleTaskContext(m.ctx, normalTasks), taskHandler, &normalTasks[0])
 			}
 		} else if hasResource {
-			result, execErr = SafeResourceKeyHandler(resourceHandler)(withResourceKeyTaskContext(m.ctx, normalTasks), normalTasks)
+			result, execErr = SafeExecute(withResourceKeyTaskContext(m.ctx, normalTasks), resourceHandler, normalTasks)
 		}
 
 		if err := m.completeBatch(m.ctx, normalTasks, execErr, result, config); err != nil {

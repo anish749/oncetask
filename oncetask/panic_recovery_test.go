@@ -7,309 +7,250 @@ import (
 	"testing"
 )
 
-func TestSafeExecute(t *testing.T) {
-	tests := []struct {
-		name           string
-		fn             func() (string, error)
-		wantResult     string
-		wantErr        bool
-		wantErrContain string
-	}{
-		{
-			name: "success",
-			fn: func() (string, error) {
-				return "success", nil
-			},
-			wantResult: "success",
-			wantErr:    false,
-		},
-		{
-			name: "returns error",
-			fn: func() (string, error) {
-				return "", errors.New("handler error")
-			},
-			wantResult:     "",
-			wantErr:        true,
-			wantErrContain: "handler error",
-		},
-		{
-			name: "recovers panic with string",
-			fn: func() (string, error) {
-				panic("something went wrong")
-			},
-			wantResult:     "",
-			wantErr:        true,
-			wantErrContain: "something went wrong",
-		},
-		{
-			name: "recovers panic with error",
-			fn: func() (string, error) {
-				panic(errors.New("panic error"))
-			},
-			wantResult:     "",
-			wantErr:        true,
-			wantErrContain: "panic error",
-		},
+func TestSafeExecute_Success(t *testing.T) {
+	ctx := context.Background()
+	handler := func(ctx context.Context, input string) (string, error) {
+		return "got: " + input, nil
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := SafeExecute(context.Background(), tt.fn)
-
-			if result != tt.wantResult {
-				t.Errorf("result = %q, want %q", result, tt.wantResult)
-			}
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("err = %v, wantErr = %v", err, tt.wantErr)
-			}
-
-			if tt.wantErrContain != "" && err != nil {
-				if !strings.Contains(err.Error(), tt.wantErrContain) {
-					t.Errorf("err = %v, want containing %q", err, tt.wantErrContain)
-				}
-			}
-		})
-	}
-}
-
-func TestSafeExecute_PanicTypes(t *testing.T) {
-	tests := []struct {
-		name       string
-		panicValue any
-		wantContain string
-	}{
-		{
-			name:        "panic with int",
-			panicValue:  42,
-			wantContain: "42",
-		},
-		{
-			name:        "panic with struct",
-			panicValue:  struct{ msg string }{"structured panic"},
-			wantContain: "structured panic",
-		},
-		{
-			name:        "panic with nil",
-			panicValue:  nil,
-			wantContain: "panic:", // Go 1.21+ wraps nil panics
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := SafeExecute(context.Background(), func() (any, error) {
-				panic(tt.panicValue)
-			})
-
-			if err == nil {
-				t.Fatal("expected error from panic")
-			}
-			if !strings.Contains(err.Error(), tt.wantContain) {
-				t.Errorf("err = %v, want containing %q", err, tt.wantContain)
-			}
-		})
-	}
-}
-
-func TestSafeExecute_ComplexResult(t *testing.T) {
-	type complexResult struct {
-		Name  string
-		Count int
-		Items []string
-	}
-
-	expected := complexResult{
-		Name:  "test",
-		Count: 42,
-		Items: []string{"a", "b", "c"},
-	}
-
-	result, err := SafeExecute(context.Background(), func() (complexResult, error) {
-		return expected, nil
-	})
+	result, err := SafeExecute(ctx, handler, "test")
 
 	if err != nil {
-		t.Errorf("unexpected error: %v", err)
+		t.Errorf("expected no error, got %v", err)
 	}
-	if result.Name != expected.Name || result.Count != expected.Count {
-		t.Errorf("result = %+v, want %+v", result, expected)
-	}
-}
-
-// testTaskKind for handler tests
-type testTaskKind string
-
-func TestSafeHandler(t *testing.T) {
-	tests := []struct {
-		name           string
-		handler        Handler[testTaskKind]
-		wantResult     any
-		wantErr        bool
-		wantErrContain string
-	}{
-		{
-			name: "success",
-			handler: func(ctx context.Context, task *OnceTask[testTaskKind]) (any, error) {
-				return "result", nil
-			},
-			wantResult: "result",
-			wantErr:    false,
-		},
-		{
-			name: "returns error",
-			handler: func(ctx context.Context, task *OnceTask[testTaskKind]) (any, error) {
-				return nil, errors.New("handler failed")
-			},
-			wantResult:     nil,
-			wantErr:        true,
-			wantErrContain: "handler failed",
-		},
-		{
-			name: "recovers panic",
-			handler: func(ctx context.Context, task *OnceTask[testTaskKind]) (any, error) {
-				panic("handler panic")
-			},
-			wantResult:     nil,
-			wantErr:        true,
-			wantErrContain: "handler panic",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			safe := SafeHandler(tt.handler)
-			result, err := safe(context.Background(), &OnceTask[testTaskKind]{})
-
-			if result != tt.wantResult {
-				t.Errorf("result = %v, want %v", result, tt.wantResult)
-			}
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("err = %v, wantErr = %v", err, tt.wantErr)
-			}
-
-			if tt.wantErrContain != "" && err != nil {
-				if !strings.Contains(err.Error(), tt.wantErrContain) {
-					t.Errorf("err = %v, want containing %q", err, tt.wantErrContain)
-				}
-			}
-		})
+	if result != "got: test" {
+		t.Errorf("expected 'got: test', got %q", result)
 	}
 }
 
-func TestSafeHandler_PreservesContext(t *testing.T) {
+func TestSafeExecute_ReturnsError(t *testing.T) {
+	ctx := context.Background()
+	expectedErr := errors.New("handler error")
+	handler := func(ctx context.Context, input string) (string, error) {
+		return "", expectedErr
+	}
+
+	result, err := SafeExecute(ctx, handler, "test")
+
+	if err != expectedErr {
+		t.Errorf("expected %v, got %v", expectedErr, err)
+	}
+	if result != "" {
+		t.Errorf("expected empty result, got %q", result)
+	}
+}
+
+func TestSafeExecute_RecoversPanic_String(t *testing.T) {
+	ctx := context.Background()
+	handler := func(ctx context.Context, input string) (string, error) {
+		panic("something went wrong")
+	}
+
+	result, err := SafeExecute(ctx, handler, "test")
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if result != "" {
+		t.Errorf("expected empty result, got %q", result)
+	}
+	if !strings.Contains(err.Error(), "panic:") {
+		t.Errorf("expected error to contain 'panic:', got %v", err)
+	}
+	if !strings.Contains(err.Error(), "something went wrong") {
+		t.Errorf("expected error to contain panic message, got %v", err)
+	}
+}
+
+func TestSafeExecute_RecoversPanic_Error(t *testing.T) {
+	ctx := context.Background()
+	panicValue := errors.New("panic with error")
+	handler := func(ctx context.Context, input int) (int, error) {
+		panic(panicValue)
+	}
+
+	_, err := SafeExecute(ctx, handler, 42)
+
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "panic with error") {
+		t.Errorf("expected error to contain panic message, got %v", err)
+	}
+}
+
+func TestSafeExecute_RecoversPanic_Int(t *testing.T) {
+	ctx := context.Background()
+	handler := func(ctx context.Context, input any) (any, error) {
+		panic(42)
+	}
+
+	_, err := SafeExecute(ctx, handler, nil)
+
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "42") {
+		t.Errorf("expected error to contain '42', got %v", err)
+	}
+}
+
+func TestSafeExecute_RecoversPanic_Nil(t *testing.T) {
+	ctx := context.Background()
+	handler := func(ctx context.Context, input any) (any, error) {
+		panic(nil) //nolint:govet // Intentionally testing panic(nil) recovery
+	}
+
+	_, err := SafeExecute(ctx, handler, nil)
+
+	// Go 1.21+ returns *runtime.PanicNilError for panic(nil)
+	// We just verify panic is recovered and converted to an error
+	if err == nil {
+		t.Fatal("expected error from panic(nil)")
+	}
+	if !strings.Contains(err.Error(), "panic:") {
+		t.Errorf("expected error to contain 'panic:', got %v", err)
+	}
+}
+
+func TestSafeExecute_PreservesContext(t *testing.T) {
 	type ctxKey string
 	key := ctxKey("test-key")
 
 	var capturedValue any
-	handler := SafeHandler(func(ctx context.Context, task *OnceTask[testTaskKind]) (any, error) {
+	handler := func(ctx context.Context, input string) (string, error) {
 		capturedValue = ctx.Value(key)
-		return nil, nil
-	})
+		return "", nil
+	}
 
 	ctx := context.WithValue(context.Background(), key, "test-value")
-	_, _ = handler(ctx, &OnceTask[testTaskKind]{})
+	_, _ = SafeExecute(ctx, handler, "input")
 
 	if capturedValue != "test-value" {
-		t.Errorf("context value = %v, want %q", capturedValue, "test-value")
+		t.Errorf("expected context value 'test-value', got %v", capturedValue)
 	}
 }
 
-func TestSafeHandler_PreservesTaskData(t *testing.T) {
-	var capturedTask *OnceTask[testTaskKind]
-	handler := SafeHandler(func(ctx context.Context, task *OnceTask[testTaskKind]) (any, error) {
-		capturedTask = task
-		return nil, nil
-	})
-
-	inputTask := &OnceTask[testTaskKind]{Id: "test-id-123"}
-	_, _ = handler(context.Background(), inputTask)
-
-	if capturedTask != inputTask {
-		t.Error("expected same task instance")
-	}
-	if capturedTask.Id != "test-id-123" {
-		t.Errorf("task ID = %q, want %q", capturedTask.Id, "test-id-123")
-	}
-}
-
-func TestSafeResourceKeyHandler(t *testing.T) {
-	tests := []struct {
-		name           string
-		handler        ResourceKeyHandler[testTaskKind]
-		tasks          []OnceTask[testTaskKind]
-		wantResult     any
-		wantErr        bool
-		wantErrContain string
-	}{
-		{
-			name: "success",
-			handler: func(ctx context.Context, tasks []OnceTask[testTaskKind]) (any, error) {
-				return len(tasks), nil
-			},
-			tasks:      []OnceTask[testTaskKind]{{Id: "1"}, {Id: "2"}, {Id: "3"}},
-			wantResult: 3,
-			wantErr:    false,
-		},
-		{
-			name: "returns error",
-			handler: func(ctx context.Context, tasks []OnceTask[testTaskKind]) (any, error) {
-				return nil, errors.New("resource handler failed")
-			},
-			tasks:          nil,
-			wantResult:     nil,
-			wantErr:        true,
-			wantErrContain: "resource handler failed",
-		},
-		{
-			name: "recovers panic",
-			handler: func(ctx context.Context, tasks []OnceTask[testTaskKind]) (any, error) {
-				panic("resource handler panic")
-			},
-			tasks:          nil,
-			wantResult:     nil,
-			wantErr:        true,
-			wantErrContain: "resource handler panic",
-		},
+func TestSafeExecute_PassesParameter(t *testing.T) {
+	ctx := context.Background()
+	var capturedParam int
+	handler := func(ctx context.Context, input int) (int, error) {
+		capturedParam = input
+		return input * 2, nil
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			safe := SafeResourceKeyHandler(tt.handler)
-			result, err := safe(context.Background(), tt.tasks)
+	result, err := SafeExecute(ctx, handler, 21)
 
-			if result != tt.wantResult {
-				t.Errorf("result = %v, want %v", result, tt.wantResult)
-			}
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("err = %v, wantErr = %v", err, tt.wantErr)
-			}
-
-			if tt.wantErrContain != "" && err != nil {
-				if !strings.Contains(err.Error(), tt.wantErrContain) {
-					t.Errorf("err = %v, want containing %q", err, tt.wantErrContain)
-				}
-			}
-		})
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if capturedParam != 21 {
+		t.Errorf("expected captured param 21, got %d", capturedParam)
+	}
+	if result != 42 {
+		t.Errorf("expected result 42, got %d", result)
 	}
 }
 
-func TestSafeResourceKeyHandler_PreservesTasks(t *testing.T) {
-	var capturedTasks []OnceTask[testTaskKind]
-	handler := SafeResourceKeyHandler(func(ctx context.Context, tasks []OnceTask[testTaskKind]) (any, error) {
-		capturedTasks = tasks
-		return nil, nil
-	})
-
-	inputTasks := []OnceTask[testTaskKind]{{Id: "a"}, {Id: "b"}}
-	_, _ = handler(context.Background(), inputTasks)
-
-	if len(capturedTasks) != 2 {
-		t.Errorf("captured %d tasks, want 2", len(capturedTasks))
+func TestSafeExecute_ComplexTypes(t *testing.T) {
+	type request struct {
+		Name  string
+		Count int
 	}
-	if capturedTasks[0].Id != "a" || capturedTasks[1].Id != "b" {
-		t.Error("task data was not preserved")
+	type response struct {
+		Message string
+		Items   []string
+	}
+
+	ctx := context.Background()
+	handler := func(ctx context.Context, req request) (response, error) {
+		items := make([]string, req.Count)
+		for i := range items {
+			items[i] = req.Name
+		}
+		return response{Message: "done", Items: items}, nil
+	}
+
+	result, err := SafeExecute(ctx, handler, request{Name: "test", Count: 3})
+
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if result.Message != "done" {
+		t.Errorf("expected message 'done', got %q", result.Message)
+	}
+	if len(result.Items) != 3 {
+		t.Errorf("expected 3 items, got %d", len(result.Items))
+	}
+}
+
+// TaskKind for testing with actual handler types
+type testTaskKind string
+
+func TestSafeExecute_WithTaskHandler(t *testing.T) {
+	ctx := context.Background()
+	handler := func(ctx context.Context, task *OnceTask[testTaskKind]) (any, error) {
+		return "processed: " + task.Id, nil
+	}
+
+	task := &OnceTask[testTaskKind]{Id: "task-123"}
+	result, err := SafeExecute(ctx, handler, task)
+
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if result != "processed: task-123" {
+		t.Errorf("expected 'processed: task-123', got %v", result)
+	}
+}
+
+func TestSafeExecute_WithTaskHandler_Panic(t *testing.T) {
+	ctx := context.Background()
+	handler := func(ctx context.Context, task *OnceTask[testTaskKind]) (any, error) {
+		panic("handler panic")
+	}
+
+	task := &OnceTask[testTaskKind]{Id: "task-123"}
+	_, err := SafeExecute(ctx, handler, task)
+
+	if err == nil {
+		t.Fatal("expected error from panic")
+	}
+	if !strings.Contains(err.Error(), "handler panic") {
+		t.Errorf("expected error to contain 'handler panic', got %v", err)
+	}
+}
+
+func TestSafeExecute_WithResourceKeyHandler(t *testing.T) {
+	ctx := context.Background()
+	handler := func(ctx context.Context, tasks []OnceTask[testTaskKind]) (any, error) {
+		return len(tasks), nil
+	}
+
+	tasks := []OnceTask[testTaskKind]{{Id: "1"}, {Id: "2"}, {Id: "3"}}
+	result, err := SafeExecute(ctx, handler, tasks)
+
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if result != 3 {
+		t.Errorf("expected result 3, got %v", result)
+	}
+}
+
+func TestSafeExecute_WithResourceKeyHandler_Panic(t *testing.T) {
+	ctx := context.Background()
+	handler := func(ctx context.Context, tasks []OnceTask[testTaskKind]) (any, error) {
+		panic("resource handler panic")
+	}
+
+	tasks := []OnceTask[testTaskKind]{{Id: "1"}}
+	_, err := SafeExecute(ctx, handler, tasks)
+
+	if err == nil {
+		t.Fatal("expected error from panic")
+	}
+	if !strings.Contains(err.Error(), "resource handler panic") {
+		t.Errorf("expected error to contain 'resource handler panic', got %v", err)
 	}
 }
