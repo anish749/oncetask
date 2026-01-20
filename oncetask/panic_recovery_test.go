@@ -8,7 +8,8 @@ import (
 )
 
 func TestSafeExecute_Success(t *testing.T) {
-	result, err := SafeExecute(func() (string, error) {
+	ctx := context.Background()
+	result, err := SafeExecute(ctx, func() (string, error) {
 		return "success", nil
 	})
 
@@ -21,9 +22,10 @@ func TestSafeExecute_Success(t *testing.T) {
 }
 
 func TestSafeExecute_ReturnsError(t *testing.T) {
+	ctx := context.Background()
 	expectedErr := errors.New("handler error")
 
-	result, err := SafeExecute(func() (string, error) {
+	result, err := SafeExecute(ctx, func() (string, error) {
 		return "", expectedErr
 	})
 
@@ -33,13 +35,11 @@ func TestSafeExecute_ReturnsError(t *testing.T) {
 	if result != "" {
 		t.Errorf("expected empty result, got %q", result)
 	}
-	if IsPanicError(err) {
-		t.Error("expected regular error, not PanicError")
-	}
 }
 
 func TestSafeExecute_RecoversPanic_String(t *testing.T) {
-	result, err := SafeExecute(func() (string, error) {
+	ctx := context.Background()
+	result, err := SafeExecute(ctx, func() (string, error) {
 		panic("something went wrong")
 	})
 
@@ -49,155 +49,58 @@ func TestSafeExecute_RecoversPanic_String(t *testing.T) {
 	if result != "" {
 		t.Errorf("expected empty result, got %q", result)
 	}
-
-	panicErr := AsPanicError(err)
-	if panicErr == nil {
-		t.Fatal("expected PanicError, got different error type")
+	if !strings.Contains(err.Error(), "panic:") {
+		t.Errorf("expected error to contain 'panic:', got %v", err)
 	}
-
-	if panicErr.Value != "something went wrong" {
-		t.Errorf("expected panic value 'something went wrong', got %v", panicErr.Value)
-	}
-
-	if !strings.Contains(panicErr.Stack, "panic_recovery_test.go") {
-		t.Errorf("expected stack trace to contain test file, got:\n%s", panicErr.Stack)
+	if !strings.Contains(err.Error(), "something went wrong") {
+		t.Errorf("expected error to contain panic message, got %v", err)
 	}
 }
 
 func TestSafeExecute_RecoversPanic_Error(t *testing.T) {
+	ctx := context.Background()
 	panicValue := errors.New("panic with error")
 
-	_, err := SafeExecute(func() (int, error) {
+	_, err := SafeExecute(ctx, func() (int, error) {
 		panic(panicValue)
 	})
 
-	panicErr := AsPanicError(err)
-	if panicErr == nil {
-		t.Fatal("expected PanicError")
+	if err == nil {
+		t.Fatal("expected error")
 	}
-
-	if panicErr.Value != panicValue {
-		t.Errorf("expected panic value to be the error, got %v", panicErr.Value)
+	if !strings.Contains(err.Error(), "panic with error") {
+		t.Errorf("expected error to contain panic message, got %v", err)
 	}
 }
 
 func TestSafeExecute_RecoversPanic_Int(t *testing.T) {
-	_, err := SafeExecute(func() (any, error) {
+	ctx := context.Background()
+	_, err := SafeExecute(ctx, func() (any, error) {
 		panic(42)
 	})
 
-	panicErr := AsPanicError(err)
-	if panicErr == nil {
-		t.Fatal("expected PanicError")
+	if err == nil {
+		t.Fatal("expected error")
 	}
-
-	if panicErr.Value != 42 {
-		t.Errorf("expected panic value 42, got %v", panicErr.Value)
+	if !strings.Contains(err.Error(), "42") {
+		t.Errorf("expected error to contain '42', got %v", err)
 	}
 }
 
 func TestSafeExecute_RecoversPanic_Nil(t *testing.T) {
-	_, err := SafeExecute(func() (any, error) {
+	ctx := context.Background()
+	_, err := SafeExecute(ctx, func() (any, error) {
 		panic(nil)
 	})
 
-	panicErr := AsPanicError(err)
-	if panicErr == nil {
-		t.Fatal("expected PanicError")
-	}
-
 	// Go 1.21+ returns *runtime.PanicNilError for panic(nil)
-	// Earlier versions returned nil. We just verify it's captured.
+	// We just verify panic is recovered and converted to an error
 	if err == nil {
-		t.Error("expected error to be non-nil")
+		t.Fatal("expected error from panic(nil)")
 	}
-}
-
-func TestPanicError_Error(t *testing.T) {
-	pe := &PanicError{
-		Value: "test panic",
-		Stack: "fake stack trace",
+	if !strings.Contains(err.Error(), "panic:") {
+		t.Errorf("expected error to contain 'panic:', got %v", err)
 	}
-
-	expected := "panic: test panic"
-	if pe.Error() != expected {
-		t.Errorf("expected %q, got %q", expected, pe.Error())
-	}
-}
-
-func TestPanicError_FullError(t *testing.T) {
-	pe := &PanicError{
-		Value: "test panic",
-		Stack: "line 1\nline 2",
-	}
-
-	fullErr := pe.FullError()
-
-	if !strings.Contains(fullErr, "panic: test panic") {
-		t.Errorf("expected full error to contain panic message")
-	}
-	if !strings.Contains(fullErr, "stack trace:") {
-		t.Errorf("expected full error to contain stack trace header")
-	}
-	if !strings.Contains(fullErr, "line 1\nline 2") {
-		t.Errorf("expected full error to contain stack trace content")
-	}
-}
-
-func TestIsPanicError(t *testing.T) {
-	tests := []struct {
-		name     string
-		err      error
-		expected bool
-	}{
-		{
-			name:     "nil error",
-			err:      nil,
-			expected: false,
-		},
-		{
-			name:     "regular error",
-			err:      errors.New("regular error"),
-			expected: false,
-		},
-		{
-			name:     "panic error",
-			err:      &PanicError{Value: "panic"},
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := IsPanicError(tt.err)
-			if result != tt.expected {
-				t.Errorf("IsPanicError(%v) = %v, expected %v", tt.err, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestAsPanicError(t *testing.T) {
-	t.Run("returns nil for regular error", func(t *testing.T) {
-		err := errors.New("regular error")
-		if AsPanicError(err) != nil {
-			t.Error("expected nil for regular error")
-		}
-	})
-
-	t.Run("returns nil for nil error", func(t *testing.T) {
-		if AsPanicError(nil) != nil {
-			t.Error("expected nil for nil error")
-		}
-	})
-
-	t.Run("returns PanicError for PanicError", func(t *testing.T) {
-		pe := &PanicError{Value: "test"}
-		result := AsPanicError(pe)
-		if result != pe {
-			t.Errorf("expected same PanicError instance")
-		}
-	})
 }
 
 // TaskKind for testing
@@ -244,13 +147,8 @@ func TestSafeHandler_RecoversPanic(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from panic")
 	}
-
-	panicErr := AsPanicError(err)
-	if panicErr == nil {
-		t.Fatal("expected PanicError")
-	}
-	if panicErr.Value != "handler panic" {
-		t.Errorf("expected panic value 'handler panic', got %v", panicErr.Value)
+	if !strings.Contains(err.Error(), "handler panic") {
+		t.Errorf("expected error to contain 'handler panic', got %v", err)
 	}
 }
 
@@ -334,13 +232,8 @@ func TestSafeResourceKeyHandler_RecoversPanic(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from panic")
 	}
-
-	panicErr := AsPanicError(err)
-	if panicErr == nil {
-		t.Fatal("expected PanicError")
-	}
-	if panicErr.Value != "resource handler panic" {
-		t.Errorf("expected panic value 'resource handler panic', got %v", panicErr.Value)
+	if !strings.Contains(err.Error(), "resource handler panic") {
+		t.Errorf("expected error to contain 'resource handler panic', got %v", err)
 	}
 }
 
@@ -363,33 +256,6 @@ func TestSafeResourceKeyHandler_PreservesTasks(t *testing.T) {
 	}
 }
 
-// TestSafeExecute_StackTraceQuality verifies that the stack trace is useful for debugging
-func TestSafeExecute_StackTraceQuality(t *testing.T) {
-	_, err := SafeExecute(func() (any, error) {
-		nestedPanic()
-		return nil, nil
-	})
-
-	panicErr := AsPanicError(err)
-	if panicErr == nil {
-		t.Fatal("expected PanicError")
-	}
-
-	// Stack should contain the function that panicked
-	if !strings.Contains(panicErr.Stack, "nestedPanic") {
-		t.Errorf("expected stack to contain 'nestedPanic', got:\n%s", panicErr.Stack)
-	}
-
-	// Stack should contain runtime.gopanic (standard Go panic marker)
-	if !strings.Contains(panicErr.Stack, "panic") {
-		t.Errorf("expected stack to contain panic marker")
-	}
-}
-
-func nestedPanic() {
-	panic("nested panic")
-}
-
 // TestSafeExecute_ComplexResult ensures complex types work correctly
 func TestSafeExecute_ComplexResult(t *testing.T) {
 	type complexResult struct {
@@ -404,7 +270,8 @@ func TestSafeExecute_ComplexResult(t *testing.T) {
 		Items: []string{"a", "b", "c"},
 	}
 
-	result, err := SafeExecute(func() (complexResult, error) {
+	ctx := context.Background()
+	result, err := SafeExecute(ctx, func() (complexResult, error) {
 		return expected, nil
 	})
 
