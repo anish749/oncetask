@@ -3,6 +3,7 @@ package queueinspector
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -43,9 +44,9 @@ type firestoreQueueInspector[TaskKind ~string] struct {
 // NewFirestoreQueueInspector creates a QueueInspector backed by Firestore.
 // It uses the same collection and environment as the task manager.
 func NewFirestoreQueueInspector[TaskKind ~string](client *firestore.Client) QueueInspector[TaskKind] {
-	env := oncetask.DefaultEnv
-	if e := getEnv(); e != "" {
-		env = e
+	env := os.Getenv(oncetask.EnvVariable)
+	if env == "" {
+		env = oncetask.DefaultEnv
 	}
 	return &firestoreQueueInspector[TaskKind]{
 		collection: client.Collection(oncetask.CollectionOnceTasks),
