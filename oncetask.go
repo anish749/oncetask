@@ -45,7 +45,6 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"github.com/anish749/oncetask/oncetask"
-	"github.com/anish749/oncetask/queueinspector"
 )
 
 // Re-export all public types and functions from the oncetask package
@@ -162,15 +161,3 @@ var GetCurrentTaskID = oncetask.GetCurrentTaskID
 // GetCurrentTaskResourceKey returns the resource key stored in the context, or an empty string if not present.
 // This is useful for debugging or when you need to access the current resource key within a handler.
 var GetCurrentTaskResourceKey = oncetask.GetCurrentTaskResourceKey
-
-// QueueDepth holds counts of non-terminal tasks grouped by status.
-type QueueDepth = queueinspector.QueueDepth
-
-// QueueInspector provides visibility into the task queue state.
-// This is a separate interface from Manager — it can be created and used independently.
-type QueueInspector[TaskKind ~string] = queueinspector.QueueInspector[TaskKind]
-
-// NewQueueInspector creates a QueueInspector backed by Firestore.
-func NewQueueInspector[TaskKind ~string](client *firestore.Client) QueueInspector[TaskKind] {
-	return queueinspector.NewFirestoreQueueInspector[TaskKind](client)
-}
