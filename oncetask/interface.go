@@ -159,4 +159,8 @@ type Manager[TaskKind ~string] interface {
 	// Returns error if task belongs to a different environment.
 	// Idempotent: Tasks already in non-terminal states are skipped (no-op).
 	ResetTasksByIds(ctx context.Context, taskIDs []string) (int, error)
+
+	// GetPendingCount returns the number of tasks ready to execute for the given task type.
+	// Pending means: not done, waitUntil <= now, leasedUntil <= now.
+	GetPendingCount(ctx context.Context, taskType TaskKind) (int, error)
 }
