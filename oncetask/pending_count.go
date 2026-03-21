@@ -12,18 +12,12 @@ import (
 // for the given task type. Uses a Firestore COUNT aggregation query — no documents
 // are transferred, costing 1 read per 1000 tasks counted.
 //
-// Pending means: not done, not cancelled, waitUntil <= now, leasedUntil <= now.
-// This reuses the same index as the readyTasks query, so no additional indexes are needed.
+// Pending means: not done, waitUntil <= now, leasedUntil <= now.
+// Reuses the same Firestore index as task processing, so no additional indexes are needed.
 func (m *firestoreOnceTaskManager[TaskKind]) GetPendingCount(ctx context.Context, taskType TaskKind) (int, error) {
 	now := time.Now().UTC()
-	nowStr := now.Format(time.RFC3339)
 
-	query := m.queryBuilder.base().
-		Where("type", "==", string(taskType)).
-		Where("doneAt", "==", "").
-		Where("waitUntil", "<=", nowStr).
-		Where("leasedUntil", "<=", nowStr)
-
+	query := m.queryBuilder.pendingTasks(string(taskType), now)
 	result, err := query.NewAggregationQuery().WithCount("count").Get(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count pending tasks for type %s: %w", taskType, err)
@@ -31,7 +25,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) GetPendingCount(ctx context.Context
 
 	countVal, ok := result["count"]
 	if !ok {
-		return 0, nil
+		return 0, fmt.Errorf("count alias missing from aggregation result for type %s", taskType)
 	}
 
 	protoVal, ok := countVal.(*pb.Value)

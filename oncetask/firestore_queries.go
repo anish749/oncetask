@@ -25,15 +25,10 @@ func (q *firestoreQueryBuilder) base() firestore.Query {
 	return q.collection.Where("env", "==", q.env)
 }
 
-// readyTasks returns a query for tasks ready to execute.
+// readyTasks returns a query for tasks ready to execute, ordered for lease acquisition.
 // Ready means: waitUntil <= now, leasedUntil <= now (expired or never leased), not done.
 func (q *firestoreQueryBuilder) readyTasks(taskType string, now time.Time) firestore.Query {
-	nowStr := now.Format(time.RFC3339)
-	return q.base().
-		Where("type", "==", taskType).
-		Where("doneAt", "==", "").
-		Where("waitUntil", "<=", nowStr).
-		Where("leasedUntil", "<=", nowStr).
+	return q.pendingTasks(taskType, now).
 		OrderBy("leasedUntil", firestore.Asc).
 		OrderBy("waitUntil", firestore.Asc)
 }
@@ -69,6 +64,17 @@ func (q *firestoreQueryBuilder) nonDoneTasksByResourceKey(taskType, resourceKey 
 		Where("type", "==", taskType).
 		Where("resourceKey", "==", resourceKey).
 		Where("doneAt", "==", "")
+}
+
+// pendingTasks returns a query for tasks ready to execute, without ordering.
+// Same filters as readyTasks but without OrderBy — suitable for COUNT aggregation.
+func (q *firestoreQueryBuilder) pendingTasks(taskType string, now time.Time) firestore.Query {
+	nowStr := now.Format(time.RFC3339)
+	return q.base().
+		Where("type", "==", taskType).
+		Where("doneAt", "==", "").
+		Where("waitUntil", "<=", nowStr).
+		Where("leasedUntil", "<=", nowStr)
 }
 
 // doc returns a document reference for a task ID.
