@@ -280,8 +280,8 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 			for _, task := range cancelledTasks {
 				ctx := withTaskContext(handlerCtx, task.Id, task.ResourceKey)
 				result, execErr := SafeExecute(ctx, cancellationHandler, &task)
-				if err := m.completeBatch(ctx, []OnceTask[TaskKind]{task}, execErr, result, config); err != nil {
-					slog.ErrorContext(ctx, "Failed to complete cancelled task", "error", err, "taskId", task.Id)
+				if err := m.completeBatch(m.ctx, []OnceTask[TaskKind]{task}, execErr, result, config); err != nil {
+					slog.ErrorContext(m.ctx, "Failed to complete cancelled task", "error", err, "taskId", task.Id)
 				}
 			}
 		}
