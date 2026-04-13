@@ -6,25 +6,6 @@ import (
 	"time"
 )
 
-func TestHandlerTimeout_ContextDeadlineMatchesLeaseDuration(t *testing.T) {
-	leaseDuration := 5 * time.Second
-	handlerTimeout := leaseDuration - 1*time.Second
-
-	ctx, cancel := context.WithTimeout(context.Background(), handlerTimeout)
-	defer cancel()
-
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		t.Fatal("expected context to have a deadline")
-	}
-
-	// The deadline should be ~4 seconds from now
-	remaining := time.Until(deadline)
-	if remaining < 3*time.Second || remaining > 5*time.Second {
-		t.Errorf("expected remaining time ~4s, got %v", remaining)
-	}
-}
-
 func TestHandlerTimeout_SlowHandlerGetsCancelled(t *testing.T) {
 	// Simulate the timeout runLoop applies: leaseDuration - 1s
 	leaseDuration := 100 * time.Millisecond
