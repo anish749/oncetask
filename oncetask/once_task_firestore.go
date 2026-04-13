@@ -254,7 +254,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 
 		// 4. Handle recurrence tasks (spawn occurrence, reschedule parent)
 		// Filter out recurrence tasks - they don't need handler execution
-		executableTasks := m.filterAndSpawnOccurrences(handlerCtx, tasks)
+		executableTasks := m.filterAndSpawnOccurrences(m.ctx, tasks)
 
 		// 5. Execute remaining tasks (non-recurrence tasks)
 		if len(executableTasks) == 0 {
