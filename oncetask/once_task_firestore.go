@@ -248,12 +248,17 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 		// We found work, check again immediately after this batch
 		shouldWait = false
 
+		// Apply handler timeout: 1 second less than the lease duration so handlers
+		// are cancelled before the lease expires, preventing double-execution.
+		handlerCtx, cancelHandler := context.WithTimeout(m.ctx, config.LeaseDuration-1*time.Second)
+
 		// 4. Handle recurrence tasks (spawn occurrence, reschedule parent)
 		// Filter out recurrence tasks - they don't need handler execution
-		executableTasks := m.filterAndSpawnOccurrences(m.ctx, tasks)
+		executableTasks := m.filterAndSpawnOccurrences(handlerCtx, tasks)
 
 		// 5. Execute remaining tasks (non-recurrence tasks)
 		if len(executableTasks) == 0 {
+			cancelHandler()
 			continue // Only had recurrence tasks, already processed
 		}
 
@@ -273,7 +278,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 		if len(cancelledTasks) > 0 {
 			cancellationHandler := getCancellationHandler[TaskKind](config)
 			for _, task := range cancelledTasks {
-				ctx := withTaskContext(m.ctx, task.Id, task.ResourceKey)
+				ctx := withTaskContext(handlerCtx, task.Id, task.ResourceKey)
 				result, execErr := SafeExecute(ctx, cancellationHandler, &task)
 				if err := m.completeBatch(ctx, []OnceTask[TaskKind]{task}, execErr, result, config); err != nil {
 					slog.ErrorContext(ctx, "Failed to complete cancelled task", "error", err, "taskId", task.Id)
@@ -282,6 +287,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 		}
 
 		if len(normalTasks) == 0 {
+			cancelHandler()
 			continue
 		}
 
@@ -290,14 +296,16 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 
 		if hasTask {
 			if len(normalTasks) != 1 {
-				slog.ErrorContext(m.ctx, "Single task handler claimed multiple tasks", "taskType", taskType, "count", len(normalTasks))
+				slog.ErrorContext(handlerCtx, "Single task handler claimed multiple tasks", "taskType", taskType, "count", len(normalTasks))
 				execErr = fmt.Errorf("expected 1 task, got %d", len(normalTasks))
 			} else {
-				result, execErr = SafeExecute(withSingleTaskContext(m.ctx, normalTasks), taskHandler, &normalTasks[0])
+				result, execErr = SafeExecute(withSingleTaskContext(handlerCtx, normalTasks), taskHandler, &normalTasks[0])
 			}
 		} else if hasResource {
-			result, execErr = SafeExecute(withResourceKeyTaskContext(m.ctx, normalTasks), resourceHandler, normalTasks)
+			result, execErr = SafeExecute(withResourceKeyTaskContext(handlerCtx, normalTasks), resourceHandler, normalTasks)
 		}
+
+		cancelHandler()
 
 		if err := m.completeBatch(m.ctx, normalTasks, execErr, result, config); err != nil {
 			slog.ErrorContext(m.ctx, "Failed to complete task batch", "error", err, "taskType", taskType)
