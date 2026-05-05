@@ -139,8 +139,19 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterTaskHandler(
 	evaluateChan := make(chan struct{}, 1)
 	m.evaluateChans[taskType] = evaluateChan
 
-	for i := 0; i < config.Concurrency; i++ {
-		go m.runLoop(taskType, evaluateChan)
+	if config.BatchClaimSize > 1 {
+		// Batch-claim mode: one fetcher goroutine owns all Firestore claiming,
+		// distributing tasks to workers via a local channel. Eliminates contention
+		// between workers when Concurrency is high.
+		workChan := make(chan OnceTask[TaskKind], config.BatchClaimSize)
+		go m.runFetcherLoop(taskType, evaluateChan, workChan)
+		for i := 0; i < config.Concurrency; i++ {
+			go m.runWorkerLoop(taskType, workChan)
+		}
+	} else {
+		for i := 0; i < config.Concurrency; i++ {
+			go m.runLoop(taskType, evaluateChan)
+		}
 	}
 
 	return nil
@@ -248,68 +259,156 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 		// We found work, check again immediately after this batch
 		shouldWait = false
 
-		// Apply handler timeout: 1 second less than the lease duration so handlers
-		// are cancelled before the lease expires, preventing double-execution.
-		handlerCtx, cancelHandler := context.WithTimeout(m.ctx, config.LeaseDuration-1*time.Second)
+		// 4 & 5. Execute claimed tasks (handles recurrence, cancellation, normal execution).
+		m.executeClaimedTasks(tasks, config, taskType, taskHandler, resourceHandler, hasTask, hasResource)
+	}
+}
 
-		// 4. Handle recurrence tasks (spawn occurrence, reschedule parent)
-		// Filter out recurrence tasks - they don't need handler execution
-		executableTasks := m.filterAndSpawnOccurrences(m.ctx, tasks)
+// runFetcherLoop is the sole Firestore-claiming goroutine in batch-claim mode.
+// It claims tasks one at a time and pushes them onto workChan for workers to execute.
+// Because only this goroutine claims tasks, workers never contend on Firestore.
+func (m *firestoreOnceTaskManager[TaskKind]) runFetcherLoop(
+	taskType TaskKind,
+	evaluateChan chan struct{},
+	workChan chan OnceTask[TaskKind],
+) {
+	slog.InfoContext(m.ctx, "Starting batch-claim fetcher loop", "taskType", taskType)
+	defer slog.InfoContext(m.ctx, "Batch-claim fetcher loop stopped", "taskType", taskType)
 
-		// 5. Execute remaining tasks (non-recurrence tasks)
-		if len(executableTasks) == 0 {
-			cancelHandler()
-			continue // Only had recurrence tasks, already processed
-		}
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
 
-		// Separate cancelled and normal tasks
-		var cancelledTasks []OnceTask[TaskKind]
-		var normalTasks []OnceTask[TaskKind]
+	shouldWait := false
 
-		for _, task := range executableTasks {
-			if task.IsCancelled {
-				cancelledTasks = append(cancelledTasks, task)
-			} else {
-				normalTasks = append(normalTasks, task)
+	for {
+		if shouldWait {
+			select {
+			case <-m.ctx.Done():
+				return
+			case <-ticker.C:
+			case <-evaluateChan:
 			}
 		}
 
-		// Process cancelled tasks individually with cancellation handler
-		if len(cancelledTasks) > 0 {
-			cancellationHandler := getCancellationHandler[TaskKind](config)
-			for _, task := range cancelledTasks {
-				ctx := withTaskContext(handlerCtx, task.Id, task.ResourceKey)
-				result, execErr := SafeExecute(ctx, cancellationHandler, &task)
-				if err := m.completeBatch(m.ctx, []OnceTask[TaskKind]{task}, execErr, result, config); err != nil {
-					slog.ErrorContext(m.ctx, "Failed to complete cancelled task", "error", err, "taskId", task.Id)
-				}
-			}
+		if m.ctx.Err() != nil {
+			return
 		}
 
-		if len(normalTasks) == 0 {
-			cancelHandler()
+		m.mu.RLock()
+		config := m.handlerConfigs[taskType]
+		_, hasResource := m.resourceKeyHandlers[taskType]
+		m.mu.RUnlock()
+
+		tasks, err := m.claimTasks(m.ctx, taskType, config, hasResource)
+		if err != nil {
+			if !errors.Is(err, errLeaseNotAvailable) {
+				slog.ErrorContext(m.ctx, "Fetcher failed to claim task", "error", err, "taskType", taskType)
+			}
+			shouldWait = true
 			continue
 		}
 
-		var execErr error
-		var result any
+		if len(tasks) == 0 {
+			shouldWait = true
+			continue
+		}
 
-		if hasTask {
-			if len(normalTasks) != 1 {
-				slog.ErrorContext(handlerCtx, "Single task handler claimed multiple tasks", "taskType", taskType, "count", len(normalTasks))
-				execErr = fmt.Errorf("expected 1 task, got %d", len(normalTasks))
-			} else {
-				result, execErr = SafeExecute(withSingleTaskContext(handlerCtx, normalTasks), taskHandler, &normalTasks[0])
+		// Push to worker channel — block until a worker is ready or context is cancelled.
+		select {
+		case workChan <- tasks[0]:
+			shouldWait = false // More tasks may be waiting; keep claiming eagerly.
+		case <-m.ctx.Done():
+			return
+		}
+	}
+}
+
+// runWorkerLoop consumes tasks from workChan and executes them.
+// Used in batch-claim mode: workers never touch Firestore for claiming.
+func (m *firestoreOnceTaskManager[TaskKind]) runWorkerLoop(
+	taskType TaskKind,
+	workChan chan OnceTask[TaskKind],
+) {
+	slog.InfoContext(m.ctx, "Starting batch-claim worker loop", "taskType", taskType)
+	defer slog.InfoContext(m.ctx, "Batch-claim worker loop stopped", "taskType", taskType)
+
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case task := <-workChan:
+			m.mu.RLock()
+			config := m.handlerConfigs[taskType]
+			taskHandler, hasTask := m.taskHandlers[taskType]
+			resourceHandler, hasResource := m.resourceKeyHandlers[taskType]
+			m.mu.RUnlock()
+
+			m.executeClaimedTasks([]OnceTask[TaskKind]{task}, config, taskType, taskHandler, resourceHandler, hasTask, hasResource)
+		}
+	}
+}
+
+// executeClaimedTasks handles the full execution lifecycle for a batch of already-claimed tasks:
+// recurrence spawning, cancellation handling, normal handler execution, and completion writes.
+// It creates its own handler-timeout context derived from m.ctx.
+func (m *firestoreOnceTaskManager[TaskKind]) executeClaimedTasks(
+	tasks []OnceTask[TaskKind],
+	config handlerConfig,
+	taskType TaskKind,
+	taskHandler Handler[TaskKind],
+	resourceHandler ResourceKeyHandler[TaskKind],
+	hasTask, hasResource bool,
+) {
+	handlerCtx, cancelHandler := context.WithTimeout(m.ctx, config.LeaseDuration-1*time.Second)
+	defer cancelHandler()
+
+	// Filter out recurrence tasks — they spawn occurrence tasks and reschedule themselves.
+	executableTasks := m.filterAndSpawnOccurrences(m.ctx, tasks)
+	if len(executableTasks) == 0 {
+		return
+	}
+
+	var cancelledTasks []OnceTask[TaskKind]
+	var normalTasks []OnceTask[TaskKind]
+	for _, task := range executableTasks {
+		if task.IsCancelled {
+			cancelledTasks = append(cancelledTasks, task)
+		} else {
+			normalTasks = append(normalTasks, task)
+		}
+	}
+
+	if len(cancelledTasks) > 0 {
+		cancellationHandler := getCancellationHandler[TaskKind](config)
+		for _, task := range cancelledTasks {
+			ctx := withTaskContext(handlerCtx, task.Id, task.ResourceKey)
+			result, execErr := SafeExecute(ctx, cancellationHandler, &task)
+			if err := m.completeBatch(m.ctx, []OnceTask[TaskKind]{task}, execErr, result, config); err != nil {
+				slog.ErrorContext(m.ctx, "Failed to complete cancelled task", "error", err, "taskId", task.Id)
 			}
-		} else if hasResource {
-			result, execErr = SafeExecute(withResourceKeyTaskContext(handlerCtx, normalTasks), resourceHandler, normalTasks)
 		}
+	}
 
-		cancelHandler()
+	if len(normalTasks) == 0 {
+		return
+	}
 
-		if err := m.completeBatch(m.ctx, normalTasks, execErr, result, config); err != nil {
-			slog.ErrorContext(m.ctx, "Failed to complete task batch", "error", err, "taskType", taskType)
+	var execErr error
+	var result any
+
+	if hasTask {
+		if len(normalTasks) != 1 {
+			slog.ErrorContext(handlerCtx, "Single task handler claimed multiple tasks", "taskType", taskType, "count", len(normalTasks))
+			execErr = fmt.Errorf("expected 1 task, got %d", len(normalTasks))
+		} else {
+			result, execErr = SafeExecute(withSingleTaskContext(handlerCtx, normalTasks), taskHandler, &normalTasks[0])
 		}
+	} else if hasResource {
+		result, execErr = SafeExecute(withResourceKeyTaskContext(handlerCtx, normalTasks), resourceHandler, normalTasks)
+	}
+
+	if err := m.completeBatch(m.ctx, normalTasks, execErr, result, config); err != nil {
+		slog.ErrorContext(m.ctx, "Failed to complete task batch", "error", err, "taskType", taskType)
 	}
 }
 
