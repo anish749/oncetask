@@ -13,6 +13,12 @@ type handlerConfig struct {
 	CancellationRetryPolicy RetryPolicy   // Retry policy for cancellation handlers (separate)
 	LeaseDuration           time.Duration // Duration for which a task is leased during execution
 	Concurrency             int           // Number of concurrent workers processing tasks
+	// BatchClaimSize enables a single fetcher goroutine to claim tasks and distribute them to
+	// Concurrency workers via a local channel, eliminating Firestore contention between workers.
+	// 0 (default) = each worker claims independently (original behaviour).
+	// >1 = one fetcher claims tasks serially; workers only touch Firestore for completion.
+	// Only applies to RegisterTaskHandler; ignored for RegisterResourceKeyHandler.
+	BatchClaimSize int
 }
 
 // defaultHandlerConfig provides sensible defaults for all handlers.
@@ -64,6 +70,20 @@ func WithConcurrency(n int) HandlerOption {
 	return func(c *handlerConfig) {
 		if n > 0 {
 			c.Concurrency = n
+		}
+	}
+}
+
+// WithBatchClaim enables a single fetcher goroutine to claim tasks from Firestore and distribute
+// them to Concurrency workers via a local channel. This eliminates cross-worker Firestore
+// contention that occurs at high concurrency when every worker races to claim the same task.
+//
+// size sets the channel buffer capacity (recommended: equal to or a small multiple of Concurrency).
+// Values ≤ 1 are ignored. Only applies to RegisterTaskHandler.
+func WithBatchClaim(size int) HandlerOption {
+	return func(c *handlerConfig) {
+		if size > 1 {
+			c.BatchClaimSize = size
 		}
 	}
 }
