@@ -443,6 +443,10 @@ func (m *firestoreOnceTaskManager[TaskKind]) claimTasks(
 
 // completeBatch updates the tasks in Firestore based on the execution result.
 // Only handles non-recurrence tasks (recurrence tasks are handled separately in processRecurrenceTasks).
+//
+// If any tasks in the batch are scheduled for retry, completeBatch also
+// schedules a wake-up at the earliest retry time so the worker doesn't have
+// to wait for its 1-minute polling tick.
 func (m *firestoreOnceTaskManager[TaskKind]) completeBatch(
 	ctx context.Context,
 	tasks []OnceTask[TaskKind],
@@ -455,7 +459,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) completeBatch(
 	}
 
 	now := time.Now().UTC()
-	return m.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+	err := m.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		// Phase 1: Read all tasks (Firestore requires all reads before writes)
 		docRefs := make([]*firestore.DocumentRef, len(tasks))
 		for i, task := range tasks {
@@ -487,6 +491,55 @@ func (m *firestoreOnceTaskManager[TaskKind]) completeBatch(
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// If we just scheduled retries, the next claim is gated by the
+	// retry's waitUntil — which is in the future. Without an explicit
+	// wake-up, the worker would block on the 1-minute ticker. Schedule
+	// a wake-up at the earliest retry instead.
+	if execErr != nil {
+		var earliest time.Time
+		for _, task := range tasks {
+			policy := config.RetryPolicy
+			if task.IsCancelled {
+				policy = config.CancellationRetryPolicy
+			}
+			if !policy.ShouldRetry(task.Attempts, execErr) {
+				continue
+			}
+			wakeup := now.Add(policy.NextRetryDelay(task.Attempts, execErr))
+			if earliest.IsZero() || wakeup.Before(earliest) {
+				earliest = wakeup
+			}
+		}
+		if !earliest.IsZero() {
+			m.scheduleWakeup(tasks[0].Type, earliest)
+		}
+	}
+
+	return nil
+}
+
+// scheduleWakeup signals evaluateChan for the given task type at the given
+// time (or immediately if the time is in the past). Used so retried tasks
+// are picked up promptly instead of waiting for the polling ticker.
+func (m *firestoreOnceTaskManager[TaskKind]) scheduleWakeup(taskType TaskKind, when time.Time) {
+	delay := time.Until(when)
+	if delay <= 0 {
+		m.evaluateNow(taskType)
+		return
+	}
+	m.cleanupWaitGroup.Add(1)
+	go func() {
+		defer m.cleanupWaitGroup.Done()
+		select {
+		case <-time.After(delay):
+			m.evaluateNow(taskType)
+		case <-m.ctx.Done():
+		}
+	}()
 }
 
 // GetTasksByResourceKey retrieves all tasks with the given resource key from Firestore.
