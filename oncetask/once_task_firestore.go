@@ -25,6 +25,15 @@ type firestoreOnceTaskManager[TaskKind ~string] struct {
 	ctx              context.Context // background context in which the task handlers run, can be cancelled during shutdown
 	cleanupWaitGroup sync.WaitGroup  // tracks runLoop goroutines so cleanup can wait for them
 
+	// stop signals workers to exit gracefully at the next iteration boundary,
+	// without aborting an in-flight Firestore transaction. Aborting a
+	// transaction client-side leaves the server holding the row/index locks
+	// until it processes the abort, which can block subsequent writes for
+	// several seconds. Letting transactions complete naturally avoids that.
+	// Cancelling the user-provided ctx remains the abrupt path.
+	stop     chan struct{}
+	stopOnce sync.Once
+
 	// Handler registration
 	mu                  sync.RWMutex
 	taskHandlers        map[TaskKind]Handler[TaskKind]
@@ -36,10 +45,26 @@ type firestoreOnceTaskManager[TaskKind ~string] struct {
 	queryBuilder *firestoreQueryBuilder
 }
 
+// gracefulShutdownWindow bounds how long cleanup waits for workers to exit
+// gracefully (i.e. without aborting any in-flight Firestore RPC) before
+// falling back to context cancellation. Most workers either find nothing
+// to do and sit in a select — they exit instantly on stop — or are mid-RPC
+// against a healthy server, which returns within milliseconds.
+const gracefulShutdownWindow = 5 * time.Second
+
 // NewFirestoreOnceTaskManager creates a new firestore once task manager.
 // The provided context is used as the parent for all background task processing goroutines.
 // Context values (trace IDs, tenant IDs, etc.) will be inherited by task handlers.
-// Returns the manager and a cleanup function that cancels all running goroutines and blocks until they exit.
+// Returns the manager and a cleanup function. The cleanup function:
+//   - signals worker goroutines to exit at the next iteration boundary,
+//   - lets any in-flight Firestore transaction complete naturally (so the
+//     server promptly releases its locks),
+//   - waits up to gracefulShutdownWindow for that to happen, then falls
+//     back to cancelling the worker context to force any stuck RPC to abort,
+//   - returns only once every worker goroutine has actually exited.
+//
+// Cancelling the provided ctx still aborts in-flight work — cleanup is the
+// graceful path; ctx cancellation is the abrupt one.
 func NewFirestoreOnceTaskManager[TaskKind ~string](ctx context.Context, client *firestore.Client) (m Manager[TaskKind], cleanup func()) {
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -48,6 +73,7 @@ func NewFirestoreOnceTaskManager[TaskKind ~string](ctx context.Context, client *
 	mgr := &firestoreOnceTaskManager[TaskKind]{
 		client:              client,
 		ctx:                 ctx,
+		stop:                make(chan struct{}),
 		taskHandlers:        make(map[TaskKind]Handler[TaskKind]),
 		resourceKeyHandlers: make(map[TaskKind]ResourceKeyHandler[TaskKind]),
 		handlerConfigs:      make(map[TaskKind]handlerConfig),
@@ -56,6 +82,27 @@ func NewFirestoreOnceTaskManager[TaskKind ~string](ctx context.Context, client *
 		queryBuilder: queryBuilder,
 	}
 	cleanup = func() {
+		mgr.stopOnce.Do(func() { close(mgr.stop) })
+
+		// Phase 1: graceful — wait for workers to exit between iterations
+		// after their current Firestore RPC completes. This avoids
+		// aborting transactions mid-flight, which would otherwise leave
+		// the server holding locks for several seconds.
+		drained := make(chan struct{})
+		go func() {
+			mgr.cleanupWaitGroup.Wait()
+			close(drained)
+		}()
+		select {
+		case <-drained:
+			cancel()
+			return
+		case <-time.After(gracefulShutdownWindow):
+		}
+
+		// Phase 2: force — something is stuck (e.g. an unreachable
+		// Firestore endpoint causing gRPC retries). Cancel the worker
+		// context so the in-flight RPC aborts, then wait again.
 		cancel()
 		mgr.cleanupWaitGroup.Wait()
 	}
@@ -219,6 +266,8 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 		// 1. Wait for trigger (if needed)
 		if shouldWait {
 			select {
+			case <-m.stop:
+				return
 			case <-m.ctx.Done():
 				return
 			case <-ticker.C: // Timer fired, check for work
@@ -226,9 +275,14 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 			}
 		}
 
-		// Check context cancellation if we skipped the select
-		if m.ctx.Err() != nil {
+		// Honour shutdown / context cancellation at the iteration boundary,
+		// before starting another transaction.
+		select {
+		case <-m.stop:
 			return
+		case <-m.ctx.Done():
+			return
+		default:
 		}
 
 		// 2. Get handler config and handlers
@@ -537,6 +591,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) scheduleWakeup(taskType TaskKind, w
 		select {
 		case <-time.After(delay):
 			m.evaluateNow(taskType)
+		case <-m.stop:
 		case <-m.ctx.Done():
 		}
 	}()
