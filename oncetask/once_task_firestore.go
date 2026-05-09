@@ -23,11 +23,7 @@ var ErrHandlerAlreadyExists = errors.New("handler for this task type already exi
 type firestoreOnceTaskManager[TaskKind ~string] struct {
 	client *firestore.Client
 	ctx    context.Context // background context in which the task handlers run, can be cancelled during shutdown
-
-	// wg tracks the worker goroutines spawned by RegisterTaskHandler /
-	// RegisterResourceKeyHandler so cleanup() can block until they have
-	// all returned.
-	wg sync.WaitGroup
+	cleanupWaitGroup sync.WaitGroup // tracks runLoop goroutines so cleanup can wait for them
 
 	// Handler registration
 	mu                  sync.RWMutex
@@ -43,9 +39,7 @@ type firestoreOnceTaskManager[TaskKind ~string] struct {
 // NewFirestoreOnceTaskManager creates a new firestore once task manager.
 // The provided context is used as the parent for all background task processing goroutines.
 // Context values (trace IDs, tenant IDs, etc.) will be inherited by task handlers.
-// Returns the manager and a cleanup function. cleanup cancels the worker
-// context AND blocks until every worker goroutine has actually returned —
-// callers can rely on no worker still running once cleanup() returns.
+// Returns the manager and a cleanup function that cancels all running goroutines and blocks until they exit.
 func NewFirestoreOnceTaskManager[TaskKind ~string](ctx context.Context, client *firestore.Client) (m Manager[TaskKind], cleanup func()) {
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -63,7 +57,7 @@ func NewFirestoreOnceTaskManager[TaskKind ~string](ctx context.Context, client *
 	}
 	cleanup = func() {
 		cancel()
-		mgr.wg.Wait()
+		mgr.cleanupWaitGroup.Wait()
 	}
 	return mgr, cleanup
 }
@@ -151,7 +145,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterTaskHandler(
 	m.evaluateChans[taskType] = evaluateChan
 
 	for i := 0; i < config.Concurrency; i++ {
-		m.wg.Add(1)
+		m.cleanupWaitGroup.Add(1)
 		go m.runLoop(taskType, evaluateChan)
 	}
 
@@ -195,7 +189,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) RegisterResourceKeyHandler(
 	m.evaluateChans[taskType] = evaluateChan
 
 	for i := 0; i < config.Concurrency; i++ {
-		m.wg.Add(1)
+		m.cleanupWaitGroup.Add(1)
 		go m.runLoop(taskType, evaluateChan)
 	}
 
@@ -211,7 +205,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 	taskType TaskKind,
 	evaluateChan chan struct{},
 ) {
-	defer m.wg.Done()
+	defer m.cleanupWaitGroup.Done()
 	slog.InfoContext(m.ctx, "Starting task consumer loop", "taskType", taskType)
 	defer slog.InfoContext(m.ctx, "Task consumer loop stopped", "taskType", taskType)
 
