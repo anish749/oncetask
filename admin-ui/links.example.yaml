@@ -1,0 +1,45 @@
+# Outbound link configuration for oncetask-admin.
+#
+# Two kinds of entries:
+#   - global: shown on every task regardless of type
+#   - types.<typeName>: shown only when task.type equals <typeName>
+#
+# Each link has:
+#   label    - button text
+#   url      - URL template; {placeholder} segments resolve against the task
+#              and are URL-encoded automatically. Pre-encode the surrounding
+#              URL structure when needed (paste from your browser address bar).
+#   requires - optional list of task-field paths that must resolve to non-empty
+#              values for this link to render. Pure non-empty check, no DSL.
+#   primary  - optional. When true, the link also appears as an icon in the
+#              list row, not just in the detail pane.
+#
+# Available top-level fields on a task: id, type, resourceKey, env, waitUntil,
+# leasedUntil, createdAt, doneAt, attempts, isCancelled, cancelledAt,
+# parentRecurrenceId, occurrenceTimestamp. Task-specific fields live under data.
+
+global:
+  # Cloud Logging filtered by taskId. Always available because `id` always exists.
+  - label: View logs (by task)
+    url: "https://console.cloud.google.com/logs/query;query=jsonPayload.taskId%3D%22{id}%22;duration=P30D?project=my-project-id"
+    primary: true
+
+  # Cloud Logging filtered by resourceKey - only shows when resourceKey is set.
+  - label: View logs (by resource)
+    requires: [resourceKey]
+    url: "https://console.cloud.google.com/logs/query;query=jsonPayload.resourceKey%3D%22{resourceKey}%22;duration=P30D?project=my-project-id"
+
+types:
+  incomingEmail:
+    label: "Incoming Email"
+    links:
+      - label: Open Gmail thread
+        requires: [data.gmailThreadId]
+        url: "https://mail.google.com/mail/u/0/#inbox/{data.gmailThreadId}"
+
+  ccAgentRun:
+    label: "CC Agent Run"
+    links:
+      - label: Open conversation
+        requires: [data.convId]
+        url: "https://your-app.example.com/conversations/{data.convId}"

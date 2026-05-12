@@ -1,0 +1,186 @@
+"use client";
+
+import { useState } from "react";
+import {
+  OnceTask,
+  TaskStatus,
+  formatTaskType,
+  getTaskStatus,
+  isNonZeroTime,
+} from "@/lib/types/oncetask";
+import { useTasks } from "@/hooks/useTasks";
+import { useTaskMetadata } from "@/hooks/useTaskMetadata";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { TaskStatusBadge } from "./TaskStatusBadge";
+import { TaskLinksInline } from "./TaskLinks";
+
+interface OnceTaskListProps {
+  selectedTaskId: string | null;
+  onSelectTask: (taskId: string) => void;
+}
+
+export function OnceTaskList({ selectedTaskId, onSelectTask }: OnceTaskListProps) {
+  const [statusFilter, setStatusFilter] = useState<TaskStatus | "all">("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [envFilter, setEnvFilter] = useState<string>("all");
+  const [resourceKeySearch, setResourceKeySearch] = useState<string>("");
+
+  const { metadata } = useTaskMetadata();
+
+  const { data: tasks = [], isLoading, error } = useTasks({
+    status: statusFilter === "all" ? undefined : statusFilter,
+    type: typeFilter === "all" ? undefined : typeFilter,
+    env: envFilter === "all" ? undefined : envFilter,
+    resourceKey: resourceKeySearch.trim() || undefined,
+  });
+
+  if (error) {
+    return (
+      <div className="text-destructive text-center py-8">
+        Error loading tasks: {error.message}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Select
+            value={statusFilter as never}
+            onValueChange={(v) => setStatusFilter((v ?? "all") as TaskStatus | "all")}
+          >
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value={TaskStatus.WAITING}>Waiting</SelectItem>
+              <SelectItem value={TaskStatus.PENDING}>Pending</SelectItem>
+              <SelectItem value={TaskStatus.LEASED}>Leased</SelectItem>
+              <SelectItem value={TaskStatus.CANCELLATION_PENDING}>
+                Cancelling
+              </SelectItem>
+              <SelectItem value={TaskStatus.COMPLETED}>Completed</SelectItem>
+              <SelectItem value={TaskStatus.FAILED}>Failed</SelectItem>
+              <SelectItem value={TaskStatus.CANCELLED}>Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v ?? "all")}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              {metadata.types.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {formatTaskType(t)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={envFilter} onValueChange={(v) => setEnvFilter(v ?? "all")}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Environment" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Envs</SelectItem>
+              {metadata.environments.map((e) => (
+                <SelectItem key={e} value={e}>
+                  {e}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <Input
+          placeholder="Search by resource key..."
+          value={resourceKeySearch}
+          onChange={(e) => setResourceKeySearch(e.target.value)}
+        />
+      </div>
+
+      {isLoading && tasks.length === 0 ? (
+        <div className="text-muted-foreground text-center py-8">Loading tasks...</div>
+      ) : tasks.length === 0 ? (
+        <div className="text-muted-foreground text-center py-8">No tasks found</div>
+      ) : (
+        <div className="border rounded-md">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Type</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Environment</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead>Wait Until</TableHead>
+                <TableHead>Done At</TableHead>
+                <TableHead>Resource Key</TableHead>
+                <TableHead>Links</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tasks.map((task) => (
+                <TableRow
+                  key={task.id}
+                  className={`cursor-pointer ${selectedTaskId === task.id ? "bg-muted" : ""}`}
+                  onClick={() => onSelectTask(task.id)}
+                >
+                  <TableCell className="font-medium">
+                    {formatTaskType(task.type)}
+                  </TableCell>
+                  <TableCell>
+                    <TaskStatusBadge status={getTaskStatus(task)} />
+                  </TableCell>
+                  <TableCell>{task.env}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {formatDate(task.createdAt)}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {formatDate(task.waitUntil)}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {formatDate(task.doneAt)}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                    {task.resourceKey || "-"}
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TaskLinksInline task={task} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatDate(s: string): string {
+  if (!isNonZeroTime(s)) return "-";
+  try {
+    return new Date(s).toLocaleString();
+  } catch {
+    return s;
+  }
+}
