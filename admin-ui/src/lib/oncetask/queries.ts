@@ -83,27 +83,31 @@ export async function getTask(id: string): Promise<OnceTask | null> {
   return { id: doc.id, ...(doc.data() as Omit<OnceTask, "id">) };
 }
 
-// distinctValues runs skip-scan to discover every distinct value of `field` in the
-// collection. O(K) queries where K is the number of distinct values. Firestore
-// "not-in" caps at 10 values per query so we accumulate the exclusion list.
-async function distinctValues(field: string, maxIterations = 50): Promise<string[]> {
+// distinctValues enumerates every distinct value of `field` via an index walk:
+// orderBy(field) + startAfter(cursor) jumps directly to the next value past
+// the last one seen. One indexed seek per distinct value (not a full scan),
+// and no cap from Firestore's 10-value `not-in` limit.
+async function distinctValues(field: string): Promise<string[]> {
   const db = getFirestore();
-  const seen = new Set<string>();
+  const values: string[] = [];
+  let cursor: string | undefined;
 
-  for (let i = 0; i < maxIterations; i++) {
-    let q: FirebaseFirestore.Query = db.collection(COLLECTION).select(field);
-    if (seen.size > 0) {
-      const exclude = Array.from(seen).slice(-10);
-      q = q.where(field, "not-in", exclude);
-    }
-    const snap = await q.limit(1).get();
+  while (true) {
+    let q: FirebaseFirestore.Query = db
+      .collection(COLLECTION)
+      .select(field)
+      .orderBy(field)
+      .limit(1);
+    if (cursor !== undefined) q = q.startAfter(cursor);
+    const snap = await q.get();
     if (snap.empty) break;
     const v = snap.docs[0].get(field) as string | undefined;
-    if (!v || seen.has(v)) break;
-    seen.add(v);
+    if (typeof v !== "string" || v === "") break;
+    values.push(v);
+    cursor = v;
   }
 
-  return Array.from(seen).sort();
+  return values;
 }
 
 export const discoverTypes = () => distinctValues("type");
