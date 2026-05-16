@@ -29,6 +29,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | Env var | Purpose |
 |---|---|
 | `GOOGLE_CLOUD_PROJECT` | Firestore project ID (required) |
+| `FIRESTORE_DATABASE_ID` | Named Firestore database (optional; defaults to `(default)`) |
 | `ONCETASK_LINKS_CONFIG` | Path to YAML file declaring outbound links (optional) |
 
 The task environment (`env` field on each task) is not a server config — it's a UI dropdown, populated by skip-scan discovery of every distinct `env` value present in the collection. The Go library reads `ONCE_TASK_ENV` on each worker to decide what to process; this admin operates across all envs and lets the operator filter in the UI.
