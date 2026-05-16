@@ -18,8 +18,8 @@ No Firebase SDK on the client. The Next.js server holds the Firestore credential
 cp .env.example .env.local
 # edit GOOGLE_CLOUD_PROJECT (and optionally ONCETASK_LINKS_CONFIG)
 gcloud auth application-default login
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).

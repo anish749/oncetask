@@ -60,55 +60,78 @@ export function OnceTaskList({ selectedTaskId, onSelectTask }: OnceTaskListProps
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
-        <div className="flex gap-2 flex-wrap">
-          <Select
-            value={statusFilter as never}
-            onValueChange={(v) => setStatusFilter((v ?? "all") as TaskStatus | "all")}
-          >
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value={TaskStatus.WAITING}>Waiting</SelectItem>
-              <SelectItem value={TaskStatus.PENDING}>Pending</SelectItem>
-              <SelectItem value={TaskStatus.LEASED}>Leased</SelectItem>
-              <SelectItem value={TaskStatus.CANCELLATION_PENDING}>
-                Cancelling
-              </SelectItem>
-              <SelectItem value={TaskStatus.COMPLETED}>Completed</SelectItem>
-              <SelectItem value={TaskStatus.FAILED}>Failed</SelectItem>
-              <SelectItem value={TaskStatus.CANCELLED}>Cancelled</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v ?? "all")}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              {metadata.types.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {formatTaskType(t)}
+        <div className="flex gap-3 flex-wrap">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Status
+            </label>
+            <Select
+              value={statusFilter as never}
+              onValueChange={(v) =>
+                setStatusFilter((v ?? "all") as TaskStatus | "all")
+              }
+            >
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="All" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value={TaskStatus.WAITING}>Waiting</SelectItem>
+                <SelectItem value={TaskStatus.PENDING}>Pending</SelectItem>
+                <SelectItem value={TaskStatus.LEASED}>Leased</SelectItem>
+                <SelectItem value={TaskStatus.CANCELLATION_PENDING}>
+                  Cancelling
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                <SelectItem value={TaskStatus.COMPLETED}>Completed</SelectItem>
+                <SelectItem value={TaskStatus.FAILED}>Failed</SelectItem>
+                <SelectItem value={TaskStatus.CANCELLED}>Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-          <Select value={envFilter} onValueChange={(v) => setEnvFilter(v ?? "all")}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Environment" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Envs</SelectItem>
-              {metadata.environments.map((e) => (
-                <SelectItem key={e} value={e}>
-                  {e}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Task type
+            </label>
+            <Select
+              value={typeFilter}
+              onValueChange={(v) => setTypeFilter(v ?? "all")}
+            >
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="All" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                {metadata.types.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {formatTaskType(t)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Environment
+            </label>
+            <Select
+              value={envFilter}
+              onValueChange={(v) => setEnvFilter(v ?? "all")}
+            >
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="All" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                {metadata.environments.map((e) => (
+                  <SelectItem key={e} value={e}>
+                    {e}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <Input
