@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/table";
 import { TaskStatusBadge } from "@/components/oncetasks/TaskStatusBadge";
 import { TaskLinksInline } from "@/components/oncetasks/TaskLinks";
-import { ErrorBanner, formatDate } from "@/components/oncetasks/shared";
+import { ErrorBanner, FetchInfo, formatDate } from "@/components/oncetasks/shared";
 
 interface Props {
   selectedTaskId: string | null;
@@ -40,7 +40,7 @@ export function ResourceTasksView({ selectedTaskId, onSelectTask }: Props) {
   const [committedKey, setCommittedKey] = useState<string>("");
 
   const args = env && committedKey ? { env, resourceKey: committedKey } : null;
-  const { data: tasks = [], isLoading, error } = useResourceTasks(args);
+  const { tasks, hasMore, isLoading, error } = useResourceTasks(args);
 
   const submit = () => setCommittedKey(keyInput.trim());
 
@@ -88,6 +88,9 @@ export function ResourceTasksView({ selectedTaskId, onSelectTask }: Props) {
         Full history (any status) for a single resource key. Mirrors Go&apos;s
         byResourceKey query.
       </p>
+      {args && tasks.length > 0 && (
+        <FetchInfo shown={tasks.length} fetched={tasks.length} hasMore={hasMore} />
+      )}
 
       {!args ? (
         <div className="text-muted-foreground text-center py-8">

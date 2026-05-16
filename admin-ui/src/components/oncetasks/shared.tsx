@@ -1,8 +1,37 @@
 // Shared helpers used by both the Browse view (OnceTaskList) and the
 // Index-aware view's sub-views. Pure presentation utilities.
 
-import { isNonZeroTime } from "@/lib/types/oncetask";
+import { MAX_TASKS_PER_QUERY, isNonZeroTime } from "@/lib/types/oncetask";
 import type { OrderBy } from "@/hooks/useTasks";
+
+// FetchInfo renders a small line below the filters telling the operator how
+// many rows are shown vs how many were fetched, and warns when the server cap
+// was the limiting factor (so they know more data may exist beyond what's on
+// screen).
+export function FetchInfo({
+  shown,
+  fetched,
+  hasMore,
+}: {
+  shown: number;
+  fetched: number;
+  hasMore: boolean;
+}) {
+  if (fetched === 0 && !hasMore) return null;
+  const filtered = shown !== fetched;
+  return (
+    <p className="text-xs text-muted-foreground">
+      Showing <strong className="font-medium">{shown}</strong>
+      {filtered && ` of ${fetched} fetched`}
+      {hasMore && (
+        <span className="text-amber-700 dark:text-amber-400">
+          {" · server cap of "}
+          {MAX_TASKS_PER_QUERY.toLocaleString()} hit — more may exist
+        </span>
+      )}
+    </p>
+  );
+}
 
 export function sortArrow(orderBy: OrderBy, field: OrderBy["field"]) {
   if (orderBy.field !== field) return null;

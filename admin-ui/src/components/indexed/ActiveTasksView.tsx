@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/table";
 import { TaskStatusBadge } from "@/components/oncetasks/TaskStatusBadge";
 import { TaskLinksInline } from "@/components/oncetasks/TaskLinks";
-import { ErrorBanner, formatDate } from "@/components/oncetasks/shared";
+import { ErrorBanner, FetchInfo, formatDate } from "@/components/oncetasks/shared";
 
 type Sub = "all" | "ready" | "leased" | "waiting";
 
@@ -48,7 +48,7 @@ export function ActiveTasksView({ selectedTaskId, onSelectTask }: Props) {
   const [sub, setSub] = useState<Sub>("all");
 
   const args = env && type ? { env, type } : null;
-  const { data: tasks = [], isLoading, error } = useActiveTasks(args);
+  const { tasks, hasMore, isLoading, error } = useActiveTasks(args);
 
   const filtered = useMemo(() => {
     if (sub === "all") return tasks;
@@ -130,6 +130,9 @@ export function ActiveTasksView({ selectedTaskId, onSelectTask }: Props) {
         ordering). Sub-state filter is applied client-side over the returned
         rows.
       </p>
+      {args && tasks.length > 0 && (
+        <FetchInfo shown={filtered.length} fetched={tasks.length} hasMore={hasMore} />
+      )}
 
       {!args ? (
         <div className="text-muted-foreground text-center py-8">

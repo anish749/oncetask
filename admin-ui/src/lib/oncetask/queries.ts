@@ -1,6 +1,7 @@
 import "server-only";
 import { COLLECTION, getFirestore } from "@/lib/firestore";
 import {
+  MAX_TASKS_PER_QUERY,
   OnceTask,
   TaskStatus,
   getTaskStatus,
@@ -18,6 +19,10 @@ export interface ListTasksFilters {
 
 export interface ListTasksResult {
   tasks: OnceTask[];
+  // hasMore is true when the underlying Firestore query returned exactly `limit`
+  // rows — i.e. the cap was the constraint, not data exhaustion. Surfaced so
+  // the UI can warn the operator that more matching rows may exist.
+  hasMore: boolean;
 }
 
 // listTasks fetches tasks from Firestore with optional filters.
@@ -69,8 +74,9 @@ export async function listTasks(filters: ListTasksFilters = {}): Promise<ListTas
     q = q.orderBy(filters.orderBy, filters.orderDir ?? "desc");
   }
 
-  const limit = filters.limit ?? 500;
+  const limit = filters.limit ?? MAX_TASKS_PER_QUERY;
   const snapshot = await q.limit(limit).get();
+  const hasMore = snapshot.docs.length === limit;
 
   let tasks: OnceTask[] = snapshot.docs.map((doc) => ({
     id: doc.id,
@@ -88,7 +94,7 @@ export async function listTasks(filters: ListTasksFilters = {}): Promise<ListTas
     tasks = tasks.filter((t) => t.resourceKey?.toLowerCase().includes(needle));
   }
 
-  return { tasks };
+  return { tasks, hasMore };
 }
 
 export async function getTask(id: string): Promise<OnceTask | null> {

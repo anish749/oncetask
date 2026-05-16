@@ -4,6 +4,11 @@
 
 export const NO_WAIT = "0001-01-01T00:00:00Z";
 
+// Hard cap on rows fetched per query. Client-side filters (status derivation,
+// resourceKey substring, sub-state) apply *after* this cap, so the UI surfaces
+// whether the cap was hit so the operator knows more data may exist.
+export const MAX_TASKS_PER_QUERY = 2000;
+
 export interface TaskError {
   at: string;
   error: string;

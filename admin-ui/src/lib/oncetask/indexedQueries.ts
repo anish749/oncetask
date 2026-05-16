@@ -1,6 +1,26 @@
 import "server-only";
 import { COLLECTION, getFirestore } from "@/lib/firestore";
-import { OnceTask } from "@/lib/types/oncetask";
+import { MAX_TASKS_PER_QUERY, OnceTask } from "@/lib/types/oncetask";
+
+interface ListResult {
+  tasks: OnceTask[];
+  // hasMore is true when the query returned exactly `limit` rows — i.e. the cap
+  // was the constraint. UI surfaces this so operators know more may exist.
+  hasMore: boolean;
+}
+
+function toResult(
+  snap: FirebaseFirestore.QuerySnapshot,
+  limit: number,
+): ListResult {
+  return {
+    tasks: snap.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<OnceTask, "id">),
+    })),
+    hasMore: snap.docs.length === limit,
+  };
+}
 
 // Index-aware queries that match the shapes Firestore already indexes for the
 // production Go code (oncetask/firestore_queries.go). The 5-field composite
@@ -36,8 +56,8 @@ export interface ResourceTasksArgs {
 export async function listActiveTasks({
   env,
   type,
-  limit = 500,
-}: ActiveTasksArgs): Promise<{ tasks: OnceTask[] }> {
+  limit = MAX_TASKS_PER_QUERY,
+}: ActiveTasksArgs): Promise<ListResult> {
   const db = getFirestore();
   const snap = await db
     .collection(COLLECTION)
@@ -48,20 +68,15 @@ export async function listActiveTasks({
     .orderBy("waitUntil", "asc")
     .limit(limit)
     .get();
-  return {
-    tasks: snap.docs.map((d) => ({
-      id: d.id,
-      ...(d.data() as Omit<OnceTask, "id">),
-    })),
-  };
+  return toResult(snap, limit);
 }
 
 // listDoneTasks returns the most recently done tasks across all envs and types.
 // Uses the single-field auto-index on doneAt. No env/type push-down — that
 // would require a new composite. JS-side filtering is the caller's option.
 export async function listDoneTasks({
-  limit = 500,
-}: DoneTasksArgs = {}): Promise<{ tasks: OnceTask[] }> {
+  limit = MAX_TASKS_PER_QUERY,
+}: DoneTasksArgs = {}): Promise<ListResult> {
   const db = getFirestore();
   const snap = await db
     .collection(COLLECTION)
@@ -69,12 +84,7 @@ export async function listDoneTasks({
     .orderBy("doneAt", "desc")
     .limit(limit)
     .get();
-  return {
-    tasks: snap.docs.map((d) => ({
-      id: d.id,
-      ...(d.data() as Omit<OnceTask, "id">),
-    })),
-  };
+  return toResult(snap, limit);
 }
 
 // listResourceTasks returns every task (any status) for a specific env +
@@ -82,8 +92,8 @@ export async function listDoneTasks({
 export async function listResourceTasks({
   env,
   resourceKey,
-  limit = 500,
-}: ResourceTasksArgs): Promise<{ tasks: OnceTask[] }> {
+  limit = MAX_TASKS_PER_QUERY,
+}: ResourceTasksArgs): Promise<ListResult> {
   const db = getFirestore();
   const snap = await db
     .collection(COLLECTION)
@@ -91,10 +101,5 @@ export async function listResourceTasks({
     .where("resourceKey", "==", resourceKey)
     .limit(limit)
     .get();
-  return {
-    tasks: snap.docs.map((d) => ({
-      id: d.id,
-      ...(d.data() as Omit<OnceTask, "id">),
-    })),
-  };
+  return toResult(snap, limit);
 }

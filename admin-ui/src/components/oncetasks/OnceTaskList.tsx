@@ -7,7 +7,7 @@ import {
   getTaskStatus,
 } from "@/lib/types/oncetask";
 import { useTasks } from "@/hooks/useTasks";
-import { ErrorBanner, formatDate, sortArrow } from "./shared";
+import { ErrorBanner, FetchInfo, formatDate, sortArrow } from "./shared";
 import { useTaskMetadata } from "@/hooks/useTaskMetadata";
 import {
   Table,
@@ -41,7 +41,7 @@ export function OnceTaskList({ selectedTaskId, onSelectTask }: OnceTaskListProps
 
   const { metadata } = useTaskMetadata();
 
-  const { data: tasks = [], isLoading, error, orderBy } = useTasks({
+  const { tasks, hasMore, isLoading, error, orderBy } = useTasks({
     status: statusFilter === "all" ? undefined : statusFilter,
     type: typeFilter === "all" ? undefined : typeFilter,
     env: envFilter === "all" ? undefined : envFilter,
@@ -143,7 +143,9 @@ export function OnceTaskList({ selectedTaskId, onSelectTask }: OnceTaskListProps
       ) : tasks.length === 0 ? (
         <div className="text-muted-foreground text-center py-8">No tasks found</div>
       ) : (
-        <div className="border rounded-md">
+        <>
+          <FetchInfo shown={tasks.length} fetched={tasks.length} hasMore={hasMore} />
+          <div className="border rounded-md">
           <Table>
             <TableHeader>
               <TableRow>
@@ -191,6 +193,7 @@ export function OnceTaskList({ selectedTaskId, onSelectTask }: OnceTaskListProps
             </TableBody>
           </Table>
         </div>
+        </>
       )}
     </div>
   );

@@ -39,7 +39,7 @@ const POLL_MS = 3000;
 async function fetchTasks(
   filters: TaskFilters,
   order: OrderBy,
-): Promise<OnceTask[]> {
+): Promise<{ tasks: OnceTask[]; hasMore: boolean }> {
   const params = new URLSearchParams();
   if (filters.status) params.set("status", filters.status);
   if (filters.type) params.set("type", filters.type);
@@ -53,8 +53,7 @@ async function fetchTasks(
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `HTTP ${res.status}`);
   }
-  const data = (await res.json()) as { tasks: OnceTask[] };
-  return data.tasks;
+  return (await res.json()) as { tasks: OnceTask[]; hasMore: boolean };
 }
 
 export function useTasks(filters: TaskFilters) {
@@ -68,5 +67,10 @@ export function useTasks(filters: TaskFilters) {
     refetchInterval: (q) => (q.state.error ? false : POLL_MS),
     retry: false,
   });
-  return { ...query, orderBy: order };
+  return {
+    ...query,
+    tasks: query.data?.tasks ?? [],
+    hasMore: query.data?.hasMore ?? false,
+    orderBy: order,
+  };
 }
