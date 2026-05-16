@@ -26,7 +26,7 @@ export function FetchInfo({
       {hasMore && (
         <span className="text-amber-700 dark:text-amber-400">
           {" · server cap of "}
-          {MAX_TASKS_PER_QUERY.toLocaleString()} hit — more may exist
+          {MAX_TASKS_PER_QUERY.toLocaleString()} hit, more may exist
         </span>
       )}
     </p>
