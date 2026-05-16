@@ -32,6 +32,10 @@ export function useTasks(filters: TaskFilters) {
   return useQuery({
     queryKey: ["tasks", filters] as const,
     queryFn: () => fetchTasks(filters),
-    refetchInterval: POLL_MS,
+    // Don't poll or retry once a query has errored; the user usually needs to
+    // act (e.g. follow a Firestore "create index" link) before the next request
+    // can succeed. Changing filters produces a new key and a fresh attempt.
+    refetchInterval: (query) => (query.state.error ? false : POLL_MS),
+    retry: false,
   });
 }

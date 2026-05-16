@@ -49,14 +49,6 @@ export function OnceTaskList({ selectedTaskId, onSelectTask }: OnceTaskListProps
     resourceKey: resourceKeySearch.trim() || undefined,
   });
 
-  if (error) {
-    return (
-      <div className="text-destructive text-center py-8">
-        Error loading tasks: {error.message}
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
@@ -145,7 +137,9 @@ export function OnceTaskList({ selectedTaskId, onSelectTask }: OnceTaskListProps
         />
       </div>
 
-      {isLoading && tasks.length === 0 ? (
+      {error ? (
+        <ErrorBanner message={error.message} />
+      ) : isLoading && tasks.length === 0 ? (
         <div className="text-muted-foreground text-center py-8">Loading tasks...</div>
       ) : tasks.length === 0 ? (
         <div className="text-muted-foreground text-center py-8">No tasks found</div>
@@ -198,6 +192,30 @@ export function OnceTaskList({ selectedTaskId, onSelectTask }: OnceTaskListProps
             </TableBody>
           </Table>
         </div>
+      )}
+    </div>
+  );
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  const parts = message.split(/(https?:\/\/\S+)/g);
+  return (
+    <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive break-all">
+      <span className="font-medium">Error loading tasks: </span>
+      {parts.map((p, i) =>
+        /^https?:\/\//.test(p) ? (
+          <a
+            key={i}
+            href={p}
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2 hover:no-underline"
+          >
+            {p}
+          </a>
+        ) : (
+          <span key={i}>{p}</span>
+        ),
       )}
     </div>
   );
