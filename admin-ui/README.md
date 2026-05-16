@@ -26,11 +26,11 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Configuration
 
-| Env var | Purpose |
-|---|---|
-| `GOOGLE_CLOUD_PROJECT` | Firestore project ID (required) |
+| Env var                 | Purpose                                                      |
+| ----------------------- | ------------------------------------------------------------ |
+| `GOOGLE_CLOUD_PROJECT`  | Firestore project ID (required)                              |
 | `FIRESTORE_DATABASE_ID` | Named Firestore database (optional; defaults to `(default)`) |
-| `ONCETASK_LINKS_CONFIG` | Path to YAML file declaring outbound links (optional) |
+| `ONCETASK_LINKS_CONFIG` | Path to YAML file declaring outbound links (optional)        |
 
 The task environment (`env` field on each task) is not a server config — it's a UI dropdown, populated by skip-scan discovery of every distinct `env` value present in the collection. The Go library reads `ONCE_TASK_ENV` on each worker to decide what to process; this admin operates across all envs and lets the operator filter in the UI.
 
@@ -51,15 +51,15 @@ Mutation endpoints operate on whatever task you target by ID. There is no server
 
 ## API surface
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/api/tasks` | List tasks with `status`, `type`, `env`, `resourceKey`, `limit` query params |
-| `GET` | `/api/tasks/[id]` | Fetch one task |
-| `POST` | `/api/tasks/[id]/reset` | Reset a terminal-state task |
-| `POST` | `/api/tasks/[id]/cancel` | Cancel a non-done task |
-| `DELETE` | `/api/tasks/[id]` | Permanently delete a task |
-| `GET` | `/api/metadata` | Discover task types + environments via skip-scan |
-| `GET` | `/api/links` | Parsed link config (for client-side rendering) |
+| Method   | Path                     | Purpose                                                                      |
+| -------- | ------------------------ | ---------------------------------------------------------------------------- |
+| `GET`    | `/api/tasks`             | List tasks with `status`, `type`, `env`, `resourceKey`, `limit` query params |
+| `GET`    | `/api/tasks/[id]`        | Fetch one task                                                               |
+| `POST`   | `/api/tasks/[id]/reset`  | Reset a terminal-state task                                                  |
+| `POST`   | `/api/tasks/[id]/cancel` | Cancel a non-done task                                                       |
+| `DELETE` | `/api/tasks/[id]`        | Permanently delete a task                                                    |
+| `GET`    | `/api/metadata`          | Discover task types + environments via skip-scan                             |
+| `GET`    | `/api/links`             | Parsed link config (for client-side rendering)                               |
 
 ## Relationship to the library
 

@@ -33,7 +33,10 @@ interface OnceTaskListProps {
   onSelectTask: (taskId: string) => void;
 }
 
-export function OnceTaskList({ selectedTaskId, onSelectTask }: OnceTaskListProps) {
+export function OnceTaskList({
+  selectedTaskId,
+  onSelectTask,
+}: OnceTaskListProps) {
   const [statusFilter, setStatusFilter] = useState<TaskStatus | "all">("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [envFilter, setEnvFilter] = useState<string>("all");
@@ -139,63 +142,74 @@ export function OnceTaskList({ selectedTaskId, onSelectTask }: OnceTaskListProps
       {error ? (
         <ErrorBanner message={error.message} />
       ) : isLoading && tasks.length === 0 ? (
-        <div className="text-muted-foreground text-center py-8">Loading tasks...</div>
+        <div className="text-muted-foreground text-center py-8">
+          Loading tasks...
+        </div>
       ) : tasks.length === 0 ? (
-        <div className="text-muted-foreground text-center py-8">No tasks found</div>
+        <div className="text-muted-foreground text-center py-8">
+          No tasks found
+        </div>
       ) : (
         <>
-          <FetchInfo shown={tasks.length} fetched={tasks.length} hasMore={hasMore} />
+          <FetchInfo
+            shown={tasks.length}
+            fetched={tasks.length}
+            hasMore={hasMore}
+          />
           <div className="border rounded-md">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Type</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Environment</TableHead>
-                <TableHead>Created{sortArrow(orderBy, "createdAt")}</TableHead>
-                <TableHead>Wait Until{sortArrow(orderBy, "waitUntil")}</TableHead>
-                <TableHead>Done At{sortArrow(orderBy, "doneAt")}</TableHead>
-                <TableHead>Resource Key</TableHead>
-                <TableHead>Links</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tasks.map((task) => (
-                <TableRow
-                  key={task.id}
-                  className={`cursor-pointer ${selectedTaskId === task.id ? "bg-muted" : ""}`}
-                  onClick={() => onSelectTask(task.id)}
-                >
-                  <TableCell className="font-medium">
-                    {formatTaskType(task.type)}
-                  </TableCell>
-                  <TableCell>
-                    <TaskStatusBadge status={getTaskStatus(task)} />
-                  </TableCell>
-                  <TableCell>{task.env}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatDate(task.createdAt)}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatDate(task.waitUntil)}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatDate(task.doneAt)}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
-                    {task.resourceKey || "-"}
-                  </TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <TaskLinksInline task={task} />
-                  </TableCell>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Environment</TableHead>
+                  <TableHead>
+                    Created{sortArrow(orderBy, "createdAt")}
+                  </TableHead>
+                  <TableHead>
+                    Wait Until{sortArrow(orderBy, "waitUntil")}
+                  </TableHead>
+                  <TableHead>Done At{sortArrow(orderBy, "doneAt")}</TableHead>
+                  <TableHead>Resource Key</TableHead>
+                  <TableHead>Links</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {tasks.map((task) => (
+                  <TableRow
+                    key={task.id}
+                    className={`cursor-pointer ${selectedTaskId === task.id ? "bg-muted" : ""}`}
+                    onClick={() => onSelectTask(task.id)}
+                  >
+                    <TableCell className="font-medium">
+                      {formatTaskType(task.type)}
+                    </TableCell>
+                    <TableCell>
+                      <TaskStatusBadge status={getTaskStatus(task)} />
+                    </TableCell>
+                    <TableCell>{task.env}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDate(task.createdAt)}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDate(task.waitUntil)}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDate(task.doneAt)}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                      {task.resourceKey || "-"}
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <TaskLinksInline task={task} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </>
       )}
     </div>
   );
 }
-

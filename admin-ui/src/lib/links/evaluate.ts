@@ -12,7 +12,10 @@ import { LinkDef, LinksConfig, RenderedLink } from "./types";
 // Placeholders are auto URL-encoded via encodeURIComponent. Operators must pre-encode
 // the surrounding URL structure (this matches how URLs are typically copy-pasted from
 // browser bars).
-export function evaluateLinks(task: OnceTask, config: LinksConfig): RenderedLink[] {
+export function evaluateLinks(
+  task: OnceTask,
+  config: LinksConfig,
+): RenderedLink[] {
   const candidates: LinkDef[] = [
     ...config.global,
     ...(config.types[task.type]?.links ?? []),
@@ -33,7 +36,10 @@ export function evaluateLinks(task: OnceTask, config: LinksConfig): RenderedLink
   return rendered;
 }
 
-function meetsRequires(task: OnceTask, requires: string[] | undefined): boolean {
+function meetsRequires(
+  task: OnceTask,
+  requires: string[] | undefined,
+): boolean {
   if (!requires || requires.length === 0) return true;
   return requires.every((path) => {
     const value = get(task, path);

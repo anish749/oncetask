@@ -12,7 +12,10 @@ export async function POST(
   } catch (err) {
     if (err instanceof MutationError) {
       const status = err.code === "NOT_FOUND" ? 404 : 409;
-      return NextResponse.json({ error: err.message, code: err.code }, { status });
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status },
+      );
     }
     console.error("resetTask failed", err);
     return NextResponse.json(

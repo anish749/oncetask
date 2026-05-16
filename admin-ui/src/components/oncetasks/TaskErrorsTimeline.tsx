@@ -23,7 +23,9 @@ export function TaskErrorsTimeline({ errors }: TaskErrorsTimelineProps) {
             <div className="text-xs text-muted-foreground font-mono">
               {formatDate(e.at)}
             </div>
-            <div className="text-sm whitespace-pre-wrap break-words">{e.error}</div>
+            <div className="text-sm whitespace-pre-wrap break-words">
+              {e.error}
+            </div>
           </li>
         ))}
       </ol>

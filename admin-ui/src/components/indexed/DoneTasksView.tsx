@@ -17,9 +17,17 @@ import {
 } from "@/components/ui/table";
 import { TaskStatusBadge } from "@/components/oncetasks/TaskStatusBadge";
 import { TaskLinksInline } from "@/components/oncetasks/TaskLinks";
-import { ErrorBanner, FetchInfo, formatDate } from "@/components/oncetasks/shared";
+import {
+  ErrorBanner,
+  FetchInfo,
+  formatDate,
+} from "@/components/oncetasks/shared";
 
-type DoneStatus = "all" | TaskStatus.COMPLETED | TaskStatus.FAILED | TaskStatus.CANCELLED;
+type DoneStatus =
+  | "all"
+  | TaskStatus.COMPLETED
+  | TaskStatus.FAILED
+  | TaskStatus.CANCELLED;
 
 const STATUS_LABEL: Record<DoneStatus, string> = {
   all: "All",
@@ -74,12 +82,16 @@ export function DoneTasksView({ selectedTaskId, onSelectTask }: Props) {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Most recently completed tasks across all environments and types,
-        ordered by Done At ▼. Status filter is applied client-side over the
-        returned rows.
+        Most recently completed tasks across all environments and types, ordered
+        by Done At ▼. Status filter is applied client-side over the returned
+        rows.
       </p>
       {tasks.length > 0 && (
-        <FetchInfo shown={filtered.length} fetched={tasks.length} hasMore={hasMore} />
+        <FetchInfo
+          shown={filtered.length}
+          fetched={tasks.length}
+          hasMore={hasMore}
+        />
       )}
 
       {error ? (

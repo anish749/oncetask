@@ -34,7 +34,9 @@ export interface ListTasksResult {
 // marker always matches what the server applied). The per-status `where` clauses
 // below are the only filtering logic we own here; we don't add server-side
 // orderBy defaults.
-export async function listTasks(filters: ListTasksFilters = {}): Promise<ListTasksResult> {
+export async function listTasks(
+  filters: ListTasksFilters = {},
+): Promise<ListTasksResult> {
   const db = getFirestore();
   let q: FirebaseFirestore.Query = db.collection(COLLECTION);
 

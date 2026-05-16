@@ -20,7 +20,9 @@ export function getFirestore(): Firestore {
   }
 
   const databaseId = process.env.FIRESTORE_DATABASE_ID;
-  cached = new Firestore(databaseId ? { projectId, databaseId } : { projectId });
+  cached = new Firestore(
+    databaseId ? { projectId, databaseId } : { projectId },
+  );
   return cached;
 }
 

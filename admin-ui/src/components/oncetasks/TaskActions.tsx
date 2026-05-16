@@ -22,7 +22,10 @@ interface TaskActionsProps {
 
 type Action = "reset" | "cancel" | "delete";
 
-const labels: Record<Action, { title: string; confirm: string; description: (id: string) => string }> = {
+const labels: Record<
+  Action,
+  { title: string; confirm: string; description: (id: string) => string }
+> = {
   reset: {
     title: "Reset this task?",
     confirm: "Reset task",
@@ -69,7 +72,11 @@ export function TaskActions({ task, onDeleted }: TaskActionsProps) {
     onSuccess: (action) => {
       invalidate();
       toast.success(
-        action === "reset" ? "Task reset" : action === "cancel" ? "Task cancelled" : "Task deleted",
+        action === "reset"
+          ? "Task reset"
+          : action === "cancel"
+            ? "Task cancelled"
+            : "Task deleted",
       );
       if (action === "delete") onDeleted();
       setPending(null);
@@ -94,21 +101,40 @@ export function TaskActions({ task, onDeleted }: TaskActionsProps) {
   return (
     <>
       <div className="flex gap-2">
-        <Button size="sm" variant="outline" onClick={() => setPending("reset")} disabled={!isTerminal}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setPending("reset")}
+          disabled={!isTerminal}
+        >
           <RotateCcw />
           Reset
         </Button>
-        <Button size="sm" variant="outline" onClick={() => setPending("cancel")} disabled={!canCancel}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setPending("cancel")}
+          disabled={!canCancel}
+        >
           <Ban />
           Cancel
         </Button>
-        <Button size="sm" variant="outline" onClick={() => setPending("delete")}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setPending("delete")}
+        >
           <Trash2 />
           Delete
         </Button>
       </div>
 
-      <Dialog open={pending !== null} onOpenChange={(open) => !open && !mutation.isPending && setPending(null)}>
+      <Dialog
+        open={pending !== null}
+        onOpenChange={(open) =>
+          !open && !mutation.isPending && setPending(null)
+        }
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{pending && labels[pending].title}</DialogTitle>
@@ -117,7 +143,11 @@ export function TaskActions({ task, onDeleted }: TaskActionsProps) {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPending(null)} disabled={mutation.isPending}>
+            <Button
+              variant="outline"
+              onClick={() => setPending(null)}
+              disabled={mutation.isPending}
+            >
               Cancel
             </Button>
             <Button
@@ -125,7 +155,9 @@ export function TaskActions({ task, onDeleted }: TaskActionsProps) {
               onClick={() => pending && mutation.mutate(pending)}
               disabled={mutation.isPending}
             >
-              {mutation.isPending ? "Working..." : pending && labels[pending].confirm}
+              {mutation.isPending
+                ? "Working..."
+                : pending && labels[pending].confirm}
             </Button>
           </DialogFooter>
         </DialogContent>

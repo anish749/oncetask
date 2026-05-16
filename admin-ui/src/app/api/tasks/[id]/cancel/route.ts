@@ -11,7 +11,10 @@ export async function POST(
     return NextResponse.json({ success: true });
   } catch (err) {
     if (err instanceof MutationError) {
-      return NextResponse.json({ error: err.message, code: err.code }, { status: 404 });
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status: 404 },
+      );
     }
     console.error("cancelTask failed", err);
     return NextResponse.json(

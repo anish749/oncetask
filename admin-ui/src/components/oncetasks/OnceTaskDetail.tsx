@@ -72,7 +72,9 @@ export function OnceTaskDetail({ taskId, onDeleted }: OnceTaskDetailProps) {
         <Separator />
 
         <div>
-          <h3 className="text-sm font-medium text-muted-foreground mb-2">Task JSON</h3>
+          <h3 className="text-sm font-medium text-muted-foreground mb-2">
+            Task JSON
+          </h3>
           <div className="overflow-x-auto rounded-md">
             <pre className="bg-muted p-4 text-xs whitespace-pre w-fit min-w-full">
               {JSON.stringify(task, null, 2)}

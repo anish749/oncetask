@@ -1,10 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  formatTaskType,
-  getTaskStatus,
-} from "@/lib/types/oncetask";
+import { formatTaskType, getTaskStatus } from "@/lib/types/oncetask";
 import { useResourceTasks } from "@/hooks/useIndexedTasks";
 import { useTaskMetadata } from "@/hooks/useTaskMetadata";
 import {
@@ -26,7 +23,11 @@ import {
 } from "@/components/ui/table";
 import { TaskStatusBadge } from "@/components/oncetasks/TaskStatusBadge";
 import { TaskLinksInline } from "@/components/oncetasks/TaskLinks";
-import { ErrorBanner, FetchInfo, formatDate } from "@/components/oncetasks/shared";
+import {
+  ErrorBanner,
+  FetchInfo,
+  formatDate,
+} from "@/components/oncetasks/shared";
 
 interface Props {
   selectedTaskId: string | null;
@@ -89,7 +90,11 @@ export function ResourceTasksView({ selectedTaskId, onSelectTask }: Props) {
         byResourceKey query.
       </p>
       {args && tasks.length > 0 && (
-        <FetchInfo shown={tasks.length} fetched={tasks.length} hasMore={hasMore} />
+        <FetchInfo
+          shown={tasks.length}
+          fetched={tasks.length}
+          hasMore={hasMore}
+        />
       )}
 
       {!args ? (

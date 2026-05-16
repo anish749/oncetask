@@ -23,7 +23,7 @@ async function fetchIndexed(params: URLSearchParams): Promise<IndexedResult> {
 // act on (e.g.) a Firestore "create index" link without a loop. Matches
 // useTasks behavior in the browse view.
 const sharedOptions = {
-  refetchInterval: <T,>(q: { state: { error: unknown } }): number | false =>
+  refetchInterval: <T>(q: { state: { error: unknown } }): number | false =>
     q.state.error ? false : POLL_MS,
   retry: false as const,
 };

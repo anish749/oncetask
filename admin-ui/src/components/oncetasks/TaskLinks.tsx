@@ -48,7 +48,8 @@ export function TaskLinksInline({ task }: TaskLinksProps) {
   const config = useLinksConfig();
   const links = evaluateLinks(task, config).filter((l) => l.primary);
 
-  if (links.length === 0) return <span className="text-muted-foreground">-</span>;
+  if (links.length === 0)
+    return <span className="text-muted-foreground">-</span>;
 
   return (
     <div className="flex gap-1">

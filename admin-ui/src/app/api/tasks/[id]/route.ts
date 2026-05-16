@@ -9,7 +9,8 @@ export async function GET(
   const { id } = await params;
   try {
     const task = await getTask(id);
-    if (!task) return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (!task)
+      return NextResponse.json({ error: "not found" }, { status: 404 });
     return NextResponse.json({ task });
   } catch (err) {
     console.error("getTask failed", err);

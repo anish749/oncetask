@@ -13,7 +13,7 @@ export function TaskStatusBadge({ status }: TaskStatusBadgeProps) {
 }
 
 function getVariantForStatus(
-  status: TaskStatus
+  status: TaskStatus,
 ): "default" | "secondary" | "destructive" | "outline" {
   switch (status) {
     case TaskStatus.COMPLETED:

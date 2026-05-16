@@ -15,7 +15,10 @@ export function BrowseView() {
   return (
     <div className="flex flex-1 overflow-hidden">
       <div className="w-2/3 border-r p-4 overflow-auto">
-        <OnceTaskList selectedTaskId={selectedId} onSelectTask={setSelectedId} />
+        <OnceTaskList
+          selectedTaskId={selectedId}
+          onSelectTask={setSelectedId}
+        />
       </div>
       <div className="w-1/3 overflow-hidden">
         <OnceTaskDetail taskId={selectedId} onDeleted={handleDeleted} />

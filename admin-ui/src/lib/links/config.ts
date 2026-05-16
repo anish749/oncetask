@@ -20,7 +20,9 @@ export function loadLinksConfig(): LinksConfig {
 
   const abs = resolve(path);
   if (!existsSync(abs)) {
-    console.warn(`[oncetask-admin] links config not found at ${abs}, no links will render`);
+    console.warn(
+      `[oncetask-admin] links config not found at ${abs}, no links will render`,
+    );
     cached = EMPTY_LINKS_CONFIG;
     return cached;
   }

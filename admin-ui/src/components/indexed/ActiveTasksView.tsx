@@ -25,7 +25,11 @@ import {
 } from "@/components/ui/table";
 import { TaskStatusBadge } from "@/components/oncetasks/TaskStatusBadge";
 import { TaskLinksInline } from "@/components/oncetasks/TaskLinks";
-import { ErrorBanner, FetchInfo, formatDate } from "@/components/oncetasks/shared";
+import {
+  ErrorBanner,
+  FetchInfo,
+  formatDate,
+} from "@/components/oncetasks/shared";
 
 type Sub = "all" | "ready" | "leased" | "waiting";
 
@@ -131,7 +135,11 @@ export function ActiveTasksView({ selectedTaskId, onSelectTask }: Props) {
         rows.
       </p>
       {args && tasks.length > 0 && (
-        <FetchInfo shown={filtered.length} fetched={tasks.length} hasMore={hasMore} />
+        <FetchInfo
+          shown={filtered.length}
+          fetched={tasks.length}
+          hasMore={hasMore}
+        />
       )}
 
       {!args ? (

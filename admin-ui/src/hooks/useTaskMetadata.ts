@@ -21,5 +21,9 @@ export function useTaskMetadata() {
     queryFn: fetchMetadata,
     staleTime: 60_000, // metadata changes rarely; cache for a minute
   });
-  return { metadata: query.data ?? EMPTY, loading: query.isLoading, error: query.error };
+  return {
+    metadata: query.data ?? EMPTY,
+    loading: query.isLoading,
+    error: query.error,
+  };
 }
