@@ -30,16 +30,19 @@ global:
     url: "https://console.cloud.google.com/logs/query;query=jsonPayload.resourceKey%3D%22{resourceKey}%22;duration=P30D?project=my-project-id"
 
 types:
-  incomingEmail:
-    label: "Incoming Email"
+  # Example: a task type whose data carries an order ID. The link only renders
+  # when data.orderId is present, and the value is URL-encoded automatically.
+  processOrder:
+    label: "Process Order"
     links:
-      - label: Open Gmail thread
-        requires: [data.gmailThreadId]
-        url: "https://mail.google.com/mail/u/0/#inbox/{data.gmailThreadId}"
+      - label: Open in admin console
+        requires: [data.orderId]
+        url: "https://your-app.example.com/orders/{data.orderId}"
 
-  ccAgentRun:
-    label: "CC Agent Run"
+  # Example: a task type whose resourceKey is the entity it operates on.
+  syncUser:
+    label: "Sync User"
     links:
-      - label: Open conversation
-        requires: [data.convId]
-        url: "https://your-app.example.com/conversations/{data.convId}"
+      - label: Open user profile
+        requires: [resourceKey]
+        url: "https://your-app.example.com/users/{resourceKey}"
