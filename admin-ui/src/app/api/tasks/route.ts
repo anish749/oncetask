@@ -9,6 +9,10 @@ export async function GET(req: NextRequest) {
   const env = params.get("env");
   const resourceKey = params.get("resourceKey");
   const limit = params.get("limit");
+  const orderBy = params.get("orderBy");
+  const orderDirRaw = params.get("orderDir");
+  const orderDir =
+    orderDirRaw === "asc" || orderDirRaw === "desc" ? orderDirRaw : undefined;
 
   try {
     const result = await listTasks({
@@ -17,6 +21,8 @@ export async function GET(req: NextRequest) {
       env: env ?? undefined,
       resourceKey: resourceKey ?? undefined,
       limit: limit ? Number(limit) : undefined,
+      orderBy: orderBy ?? undefined,
+      orderDir,
     });
     return NextResponse.json(result);
   } catch (err) {

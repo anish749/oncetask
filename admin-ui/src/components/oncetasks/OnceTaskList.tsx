@@ -8,7 +8,7 @@ import {
   getTaskStatus,
   isNonZeroTime,
 } from "@/lib/types/oncetask";
-import { useTasks } from "@/hooks/useTasks";
+import { OrderBy, useTasks } from "@/hooks/useTasks";
 import { useTaskMetadata } from "@/hooks/useTaskMetadata";
 import {
   Table,
@@ -42,7 +42,7 @@ export function OnceTaskList({ selectedTaskId, onSelectTask }: OnceTaskListProps
 
   const { metadata } = useTaskMetadata();
 
-  const { data: tasks = [], isLoading, error } = useTasks({
+  const { data: tasks = [], isLoading, error, orderBy } = useTasks({
     status: statusFilter === "all" ? undefined : statusFilter,
     type: typeFilter === "all" ? undefined : typeFilter,
     env: envFilter === "all" ? undefined : envFilter,
@@ -151,9 +151,9 @@ export function OnceTaskList({ selectedTaskId, onSelectTask }: OnceTaskListProps
                 <TableHead>Type</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Environment</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Wait Until</TableHead>
-                <TableHead>Done At</TableHead>
+                <TableHead>Created{sortArrow(orderBy, "createdAt")}</TableHead>
+                <TableHead>Wait Until{sortArrow(orderBy, "waitUntil")}</TableHead>
+                <TableHead>Done At{sortArrow(orderBy, "doneAt")}</TableHead>
                 <TableHead>Resource Key</TableHead>
                 <TableHead>Links</TableHead>
               </TableRow>
@@ -194,6 +194,15 @@ export function OnceTaskList({ selectedTaskId, onSelectTask }: OnceTaskListProps
         </div>
       )}
     </div>
+  );
+}
+
+function sortArrow(orderBy: OrderBy, field: OrderBy["field"]) {
+  if (orderBy.field !== field) return null;
+  return (
+    <span className="ml-1 text-muted-foreground">
+      {orderBy.direction === "asc" ? "▲" : "▼"}
+    </span>
   );
 }
 
