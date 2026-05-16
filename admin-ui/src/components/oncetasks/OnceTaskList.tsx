@@ -98,7 +98,11 @@ export function OnceTaskList({ selectedTaskId, onSelectTask }: OnceTaskListProps
               onValueChange={(v) => setTypeFilter(v ?? "all")}
             >
               <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="All" />
+                <SelectValue placeholder="All">
+                  {(value: string | null) =>
+                    !value || value === "all" ? "All" : formatTaskType(value)
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
