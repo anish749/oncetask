@@ -16,7 +16,7 @@ No Firebase SDK on the client. The Next.js server holds the Firestore credential
 
 ```bash
 cp .env.example .env.local
-# edit GOOGLE_CLOUD_PROJECT, ONCE_TASK_ENV, ONCETASK_LINKS_CONFIG
+# edit GOOGLE_CLOUD_PROJECT (and optionally ONCETASK_LINKS_CONFIG)
 gcloud auth application-default login
 npm install
 npm run dev
@@ -29,8 +29,9 @@ Open [http://localhost:3000](http://localhost:3000).
 | Env var | Purpose |
 |---|---|
 | `GOOGLE_CLOUD_PROJECT` | Firestore project ID (required) |
-| `ONCE_TASK_ENV` | Task environment this instance is scoped to (default `DEFAULT`) |
 | `ONCETASK_LINKS_CONFIG` | Path to YAML file declaring outbound links (optional) |
+
+The task environment (`env` field on each task) is not a server config — it's a UI dropdown, populated by skip-scan discovery of every distinct `env` value present in the collection. The Go library reads `ONCE_TASK_ENV` on each worker to decide what to process; this admin operates across all envs and lets the operator filter in the UI.
 
 ## Outbound links
 
@@ -45,7 +46,7 @@ This covers View Logs, Gmail thread links, conversation deep-links, and similar 
 
 This app ships with **no built-in authentication**. Deploy it behind a reverse proxy (Caddy `forward_auth`, nginx `auth_request` + oauth2-proxy, Cloudflare Access, Google IAP, Tailscale, etc.) or on a private network.
 
-Mutation endpoints (`POST /api/tasks/[id]/reset`, `cancel`, `DELETE /api/tasks/[id]`) all validate that the target task belongs to `ONCE_TASK_ENV` before writing — accidentally pointing at the wrong env is caught server-side.
+Mutation endpoints operate on whatever task you target by ID. There is no server-side env scoping — accidentally hitting the wrong project is prevented by `GOOGLE_CLOUD_PROJECT` pointing at one project at a time.
 
 ## API surface
 
