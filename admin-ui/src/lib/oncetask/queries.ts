@@ -1,6 +1,7 @@
 import "server-only";
 import { COLLECTION, getFirestore } from "@/lib/firestore";
 import {
+  NO_WAIT,
   OnceTask,
   TaskStatus,
   getTaskStatus,
@@ -33,17 +34,28 @@ export async function listTasks(filters: ListTasksFilters = {}): Promise<ListTas
     q = q.where("type", "==", filters.type);
   }
 
-  // Pre-filter on server side where status maps cleanly to a stored field.
+  // Push the strongest single-field server filter we can per status, and add an
+  // explicit orderBy so the row cap bounds the most recent matches (not an
+  // arbitrary slice). JS post-filter below handles the derived bits Firestore
+  // can't express (e.g. attempts > errors.length).
   if (filters.status) {
     const now = new Date().toISOString();
-    if (
-      filters.status === TaskStatus.COMPLETED ||
-      filters.status === TaskStatus.FAILED ||
-      filters.status === TaskStatus.CANCELLED
-    ) {
-      q = q.where("doneAt", "!=", "");
-    } else if (filters.status === TaskStatus.LEASED) {
-      q = q.where("leasedUntil", ">", now);
+    switch (filters.status) {
+      case TaskStatus.COMPLETED:
+      case TaskStatus.FAILED:
+      case TaskStatus.CANCELLED:
+        q = q.where("doneAt", ">", NO_WAIT).orderBy("doneAt", "desc");
+        break;
+      case TaskStatus.LEASED:
+        q = q.where("leasedUntil", ">", now).orderBy("leasedUntil", "asc");
+        break;
+      case TaskStatus.WAITING:
+        q = q.where("waitUntil", ">", now).orderBy("waitUntil", "asc");
+        break;
+      case TaskStatus.PENDING:
+      case TaskStatus.CANCELLATION_PENDING:
+        q = q.where("doneAt", "==", NO_WAIT).orderBy("createdAt", "desc");
+        break;
     }
   }
 
