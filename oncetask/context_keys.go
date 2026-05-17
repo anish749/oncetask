@@ -10,16 +10,18 @@ type contextKey string
 const (
 	taskIDContextKey      contextKey = "oncetask.taskID"
 	resourceKeyContextKey contextKey = "oncetask.resourceKey"
+	taskTypeContextKey    contextKey = "oncetask.taskType"
 )
 
-// withTaskContext adds both task ID and resource key to the context for automatic logging
-func withTaskContext(ctx context.Context, taskID, resourceKey string) context.Context {
+// withTaskContext adds task ID, resource key, and task type to the context for automatic logging
+func withTaskContext(ctx context.Context, taskID, resourceKey, taskType string) context.Context {
 	if taskID != "" {
 		ctx = context.WithValue(ctx, taskIDContextKey, taskID)
 	}
 	if resourceKey != "" {
 		ctx = context.WithValue(ctx, resourceKeyContextKey, resourceKey)
 	}
+	ctx = context.WithValue(ctx, taskTypeContextKey, taskType)
 	return ctx
 }
 
@@ -27,9 +29,7 @@ func withSingleTaskContext[TaskKind ~string](ctx context.Context, tasks []OnceTa
 	if len(tasks) == 0 {
 		return ctx
 	}
-	taskID := tasks[0].Id
-	resourceKey := tasks[0].ResourceKey
-	return withTaskContext(ctx, taskID, resourceKey)
+	return withTaskContext(ctx, tasks[0].Id, tasks[0].ResourceKey, string(tasks[0].Type))
 }
 
 // withResourceKeyTaskContext is used for resource key batched tasks and adds only the resource key to the context for automatic logging
@@ -43,7 +43,7 @@ func withResourceKeyTaskContext[TaskKind ~string](ctx context.Context, tasks []O
 		taskID = tasks[0].Id
 	}
 
-	return withTaskContext(ctx, taskID, tasks[0].ResourceKey)
+	return withTaskContext(ctx, taskID, tasks[0].ResourceKey, string(tasks[0].Type))
 }
 
 // GetCurrentTaskID returns the task ID stored in the context, or an empty string if not present.
