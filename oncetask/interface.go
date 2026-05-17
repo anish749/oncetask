@@ -86,6 +86,7 @@ type Manager[TaskKind ~string] interface {
 	//   - WithCancellationRetryPolicy: Configure retry behavior for cancellation handlers
 	//   - WithLeaseDuration: Set how long a task is leased during execution
 	//   - WithConcurrency: Set number of concurrent workers
+	//   - WithPollInterval: Set the idle-poll fallback interval for the consumer loop
 	RegisterTaskHandler(taskType TaskKind, handler Handler[TaskKind], opts ...HandlerOption) error
 
 	// RegisterResourceKeyHandler listens for new tasks and executes the handler for all tasks with the same resource key.
@@ -103,6 +104,7 @@ type Manager[TaskKind ~string] interface {
 	//   - WithCancellationRetryPolicy: Configure retry behavior for cancellation handlers
 	//   - WithLeaseDuration: Set how long a task is leased during execution
 	//   - WithConcurrency: Set number of concurrent workers
+	//   - WithPollInterval: Set the idle-poll fallback interval for the consumer loop
 	RegisterResourceKeyHandler(taskType TaskKind, handler ResourceKeyHandler[TaskKind], opts ...HandlerOption) error
 
 	// GetTasksByResourceKey retrieves all tasks with the given resource key.

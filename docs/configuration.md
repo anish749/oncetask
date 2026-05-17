@@ -11,6 +11,7 @@ manager.RegisterTaskHandler(taskKind, handler,
     oncetask.WithRetryPolicy(policy),
     oncetask.WithLeaseDuration(duration),
     oncetask.WithConcurrency(n),
+    oncetask.WithPollInterval(interval),
 )
 ```
 
@@ -112,6 +113,26 @@ oncetask.WithConcurrency(3)
 - Increase for I/O-bound tasks (network calls, database operations)
 - Keep low for CPU-intensive tasks
 - Consider your downstream service rate limits
+
+## Poll Interval
+
+Controls the idle-poll fallback interval for the consumer loop:
+
+```go
+oncetask.WithPollInterval(15 * time.Second)
+```
+
+**Default:** 1 minute
+
+**Behavior:**
+- New task creations wake the loop immediately, regardless of this setting
+- Only affects time-based readiness (waitUntil expiry, retry backoffs, recurrence occurrences)
+- Lower values reduce scheduling latency at the cost of more Firestore reads
+
+**Recommendations:**
+- Default is fine for most workloads
+- Reduce when scheduled tasks need to fire close to their `waitUntil`
+- Increase to reduce Firestore reads when latency is not critical
 
 ## Cancellation Handler
 
