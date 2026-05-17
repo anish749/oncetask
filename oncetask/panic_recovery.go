@@ -28,5 +28,9 @@ func SafeExecute[P any, R any](ctx context.Context, fn func(context.Context, P) 
 		}
 	}()
 
-	return fn(ctx, p)
+	result, err = fn(ctx, p)
+	if err != nil {
+		slog.ErrorContext(ctx, "Handler returned error", "error", err)
+	}
+	return result, err
 }
