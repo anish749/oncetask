@@ -13,6 +13,7 @@ type handlerConfig struct {
 	CancellationRetryPolicy RetryPolicy   // Retry policy for cancellation handlers (separate)
 	LeaseDuration           time.Duration // Duration for which a task is leased during execution
 	Concurrency             int           // Number of concurrent workers processing tasks
+	PollInterval            time.Duration // Idle-poll fallback interval for the consumer loop
 }
 
 // defaultHandlerConfig provides sensible defaults for all handlers.
@@ -31,6 +32,7 @@ var defaultHandlerConfig = handlerConfig{
 	},
 	LeaseDuration:           10 * time.Minute,
 	Concurrency:             1,
+	PollInterval:            1 * time.Minute,
 	cancellationTaskHandler: nil, // Optional
 }
 
@@ -91,5 +93,15 @@ func WithCancellationHandler[TaskKind ~string](handler Handler[TaskKind]) Handle
 func WithCancellationRetryPolicy(policy RetryPolicy) HandlerOption {
 	return func(c *handlerConfig) {
 		c.CancellationRetryPolicy = policy
+	}
+}
+
+// WithPollInterval sets the idle-poll fallback interval for the consumer loop.
+// Non-positive values are ignored; default is 1 minute.
+func WithPollInterval(d time.Duration) HandlerOption {
+	return func(c *handlerConfig) {
+		if d > 0 {
+			c.PollInterval = d
+		}
 	}
 }

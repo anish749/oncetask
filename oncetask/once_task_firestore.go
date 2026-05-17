@@ -209,7 +209,10 @@ func (m *firestoreOnceTaskManager[TaskKind]) runLoop(
 	slog.InfoContext(m.ctx, "Starting task consumer loop", "taskType", taskType)
 	defer slog.InfoContext(m.ctx, "Task consumer loop stopped", "taskType", taskType)
 
-	ticker := time.NewTicker(1 * time.Minute)
+	m.mu.RLock()
+	pollInterval := m.handlerConfigs[taskType].PollInterval
+	m.mu.RUnlock()
+	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
 	// Start with checking for work immediately
