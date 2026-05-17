@@ -40,6 +40,10 @@ func (h *ContextHandler) Handle(ctx context.Context, r slog.Record) error {
 	if resourceKey, ok := ctx.Value(resourceKeyContextKey).(string); ok {
 		r.AddAttrs(slog.String("resourceKey", resourceKey))
 	}
+	// Extract task type from context and add it to the record
+	if taskType, ok := ctx.Value(taskTypeContextKey).(string); ok {
+		r.AddAttrs(slog.String("taskType", taskType))
+	}
 	return h.handler.Handle(ctx, r)
 }
 

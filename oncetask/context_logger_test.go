@@ -54,7 +54,7 @@ func TestContextHandler_WithTaskIDOnly(t *testing.T) {
 	logger := slog.New(contextHandler)
 
 	// Create a context with only task ID
-	ctx := withTaskContext(context.Background(), "test-task-123", "")
+	ctx := withTaskContext(context.Background(), "test-task-123", "", "email")
 
 	// Log using the context
 	logger.InfoContext(ctx, "Processing task", "operation", "sync")
@@ -99,7 +99,7 @@ func TestContextHandler_WithResourceKeyOnly(t *testing.T) {
 	logger := slog.New(contextHandler)
 
 	// Create a context with only resource key (batch processing scenario)
-	ctx := withTaskContext(context.Background(), "", "user-123")
+	ctx := withTaskContext(context.Background(), "", "user-123", "email")
 
 	// Log using the context
 	logger.InfoContext(ctx, "Processing resource batch", "operation", "update")
@@ -144,7 +144,7 @@ func TestContextHandler_WithBothTaskIDAndResourceKey(t *testing.T) {
 	logger := slog.New(contextHandler)
 
 	// Create a context with both task ID and resource key
-	ctx := withTaskContext(context.Background(), "task-999", "user-456")
+	ctx := withTaskContext(context.Background(), "task-999", "user-456", "email")
 
 	// Log using the context
 	logger.InfoContext(ctx, "Processing task with resource key")
@@ -165,6 +165,27 @@ func TestContextHandler_WithBothTaskIDAndResourceKey(t *testing.T) {
 	}
 }
 
+func TestContextHandler_InjectsTaskType(t *testing.T) {
+	var buf bytes.Buffer
+	jsonHandler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})
+	contextHandler := NewContextHandler(jsonHandler)
+	logger := slog.New(contextHandler)
+
+	ctx := withTaskContext(context.Background(), "task-1", "user-1", "send_email")
+	logger.InfoContext(ctx, "Processing")
+
+	var logEntry map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
+		t.Fatalf("Failed to parse log output: %v", err)
+	}
+
+	if taskType, ok := logEntry["taskType"].(string); !ok || taskType != "send_email" {
+		t.Errorf("Expected taskType to be 'send_email', got: %v", logEntry["taskType"])
+	}
+}
+
 func TestContextHandler_WithAttrs(t *testing.T) {
 	var buf bytes.Buffer
 	jsonHandler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{
@@ -175,7 +196,7 @@ func TestContextHandler_WithAttrs(t *testing.T) {
 	// Create a logger with additional attributes
 	logger := slog.New(contextHandler).With("service", "oncetask")
 
-	ctx := withTaskContext(context.Background(), "task-789", "")
+	ctx := withTaskContext(context.Background(), "task-789", "", "email")
 	logger.InfoContext(ctx, "Test message")
 
 	var logEntry map[string]interface{}
