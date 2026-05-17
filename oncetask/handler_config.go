@@ -13,6 +13,11 @@ type handlerConfig struct {
 	CancellationRetryPolicy RetryPolicy   // Retry policy for cancellation handlers (separate)
 	LeaseDuration           time.Duration // Duration for which a task is leased during execution
 	Concurrency             int           // Number of concurrent workers processing tasks
+	// PollInterval is the idle-poll fallback for time-based readiness (waitUntil expiry,
+	// retry backoffs, recurrence occurrences). New task creations and active backlogs
+	// wake the consumer loop immediately via evaluateChan; PollInterval is the floor on
+	// how stale a "scheduled-for-later" task can be relative to its scheduled time.
+	PollInterval time.Duration
 }
 
 // defaultHandlerConfig provides sensible defaults for all handlers.
@@ -31,6 +36,7 @@ var defaultHandlerConfig = handlerConfig{
 	},
 	LeaseDuration:           10 * time.Minute,
 	Concurrency:             1,
+	PollInterval:            1 * time.Minute,
 	cancellationTaskHandler: nil, // Optional
 }
 
@@ -91,5 +97,20 @@ func WithCancellationHandler[TaskKind ~string](handler Handler[TaskKind]) Handle
 func WithCancellationRetryPolicy(policy RetryPolicy) HandlerOption {
 	return func(c *handlerConfig) {
 		c.CancellationRetryPolicy = policy
+	}
+}
+
+// WithPollInterval sets the idle-poll fallback interval for the consumer loop.
+// Defaults to 1 minute. New task creations wake the loop immediately via the
+// internal evaluate signal, so this only affects time-based readiness (waitUntil
+// expiry, retry backoffs, recurrence occurrences). Lower values reduce scheduling
+// latency at the cost of more Firestore reads. The value is read once when the
+// consumer loop starts; re-registration does not reset an already-running ticker.
+// Non-positive values are ignored.
+func WithPollInterval(d time.Duration) HandlerOption {
+	return func(c *handlerConfig) {
+		if d > 0 {
+			c.PollInterval = d
+		}
 	}
 }
