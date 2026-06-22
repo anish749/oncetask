@@ -91,6 +91,7 @@ func (m *firestoreOnceTaskManager[TaskKind]) CancelTasksByIds(
 	now := time.Now().UTC()
 	env := getTaskEnv()
 	var errs []error
+	taskTypes := make(map[TaskKind]struct{})
 
 	for _, docSnap := range docSnaps {
 		if !docSnap.Exists() {
@@ -121,8 +122,10 @@ func (m *firestoreOnceTaskManager[TaskKind]) CancelTasksByIds(
 		job, err := bw.Update(docSnap.Ref, updates)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to create update job for task %s: %w", docSnap.Ref.ID, err))
+			continue
 		}
 		jobs = append(jobs, job)
+		taskTypes[task.Type] = struct{}{}
 	}
 
 	bw.End()
@@ -135,6 +138,13 @@ func (m *firestoreOnceTaskManager[TaskKind]) CancelTasksByIds(
 		} else {
 			errs = append(errs, err)
 		}
+	}
+
+	// Wake any registered worker so the cancellation handler runs (or
+	// the recurrence task gets marked done) without waiting for the
+	// next polling tick.
+	for taskType := range taskTypes {
+		m.evaluateNow(taskType)
 	}
 
 	if len(errs) > 0 {
